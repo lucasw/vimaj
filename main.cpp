@@ -44,17 +44,23 @@
 // BOLD black text with blue background
 #define CLTX2 "\e[1;44m"  
 
+// TBD move to config file in $HOME/.vimaj/config.yml
+DEFINE_int32(width, 1200, "width");
+DEFINE_int32(height, 800, "width");
+DEFINE_double(max_scale, 1.5, "maximum amount to scale the image");
 
 bool resizeImages(
   const std::vector<cv::Mat>& frames_orig, 
   std::vector<cv::Mat>& frames,
-  const cv::Size sz
+  const cv::Size sz,
+  const double max_scale
   )
 {
     frames.clear();
   
     //int mode = cv::INTER_NEAREST;
-    int mode = cv::INTER_CUBIC;
+    //int mode = cv::INTER_CUBIC;
+    int mode = cv::INTER_LINEAR;
     const bool keep_aspect = true; // getSignal("keep_aspect");
 
     for (int i = 0; i < frames_orig.size(); i++) {
@@ -68,17 +74,30 @@ bool resizeImages(
       if (keep_aspect) {
 
         cv::Size tmp_sz = sz;
-        
+
         int off_x = 0;
         int off_y = 0;
         // TBD could have epsilon defined by 1 pixel width
         if (aspect_0 > aspect_1) {
           tmp_sz.height = tmp_sz.width / aspect_0;
-          off_y = (sz.height - tmp_sz.height)/2;
         } else if (aspect_0 < aspect_1) {
           tmp_sz.width = tmp_sz.height * aspect_0;  
-          off_x = (sz.width - tmp_sz.width)/2;
         }
+        
+        VLOG(2) << tmp0.cols << " " << tmp0.rows << " * " << max_scale << " -> "
+            << tmp_sz.width << " " << tmp_sz.height; 
+        // make sure not to upscale the image too much
+        if (tmp_sz.width > tmp0.cols * max_scale) {
+          tmp_sz.width = tmp0.cols * max_scale;
+          tmp_sz.height = tmp0.rows * max_scale;
+        }
+        //if (tmp_sz.height > tmp0.rows * max_scale) { 
+        //  tmp_sz.width = tmp0.cols * max_scale;
+        //  tmp_sz.height = tmp0.rows * max_scale;
+        //}
+
+        off_x = (sz.width - tmp_sz.width)/2;
+        off_y = (sz.height - tmp_sz.height)/2;
         
         cv::Mat tmp_aspect;
         cv::resize( tmp0, tmp_aspect, tmp_sz, 0, 0, mode );
@@ -188,8 +207,13 @@ int main( int argc, char* argv[] )
   LOG(INFO) << "load time " << t1.elapsed();
   std::vector<cv::Mat> frames; 
   boost::timer t2;
-  const bool rv2 = resizeImages(frames_orig, frames, cv::Size(1200,850));
+  const bool rv2 = resizeImages(frames_orig, frames, 
+      cv::Size(FLAGS_width, FLAGS_height),
+      FLAGS_max_scale
+      );
   LOG(INFO) << "resize time " << t2.elapsed();
+  
+  cv::namedWindow("frames", CV_GUI_NORMAL | CV_WINDOW_AUTOSIZE);
 
   bool run = rv && rv2;
   int ind = 0;
