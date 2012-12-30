@@ -56,6 +56,7 @@ bool resizeImages(
   const double max_scale
   )
 {
+  boost::timer t2;
     std::vector<cv::Mat> frames_scaled; 
     frames.clear();
   
@@ -96,6 +97,11 @@ bool resizeImages(
         frames_scaled.push_back(tmp_aspect);
     }
 
+    float t2_elapsed = t2.elapsed();
+    LOG(INFO) << "scale time " << t2_elapsed
+      << " " << (float)t2_elapsed/(float)frames_scaled.size();
+
+    boost::timer t1;
     for (int i = 0; i < frames_orig.size(); i++) {
       cv::Mat tmp_aspect = frames_scaled[i]; 
       cv::Mat tmp1 = cv::Mat( sz, tmp_aspect.type(), cv::Scalar::all(0));
@@ -114,6 +120,10 @@ bool resizeImages(
 
       frames.push_back(tmp1);
     }
+
+    float t1_elapsed = t1.elapsed();
+    LOG(INFO) << "render time " << t1_elapsed
+      << " " << (float)t1_elapsed/(float)frames_scaled.size();
 
     return true;
   }
@@ -203,14 +213,14 @@ int main( int argc, char* argv[] )
   std::vector<cv::Mat> frames_orig; 
   boost::timer t1;
   const bool rv = loadImages(".", frames_orig);
-  LOG(INFO) << "load time " << t1.elapsed();
+  float t1_elapsed = t1.elapsed();
+  LOG(INFO) << "loaded " << frames_orig.size() << " in time " << t1_elapsed 
+      << " " << (float)t1_elapsed/(float)frames_orig.size();
   std::vector<cv::Mat> frames; 
-  boost::timer t2;
   const bool rv2 = resizeImages(frames_orig, frames, 
       cv::Size(FLAGS_width, FLAGS_height),
       FLAGS_max_scale
       );
-  LOG(INFO) << "resize time " << t2.elapsed();
   
   cv::namedWindow("frames", CV_GUI_NORMAL | CV_WINDOW_AUTOSIZE);
 
