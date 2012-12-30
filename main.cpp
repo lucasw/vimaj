@@ -49,6 +49,34 @@ DEFINE_int32(width, 1200, "width");
 DEFINE_int32(height, 800, "width");
 DEFINE_double(max_scale, 1.5, "maximum amount to scale the image");
 
+// TBD is this any faster than warpImage?
+bool renderImage(cv::Mat& src, cv::Mat& dst, int offx, int offy)
+{
+  if (offx > dst.cols ) return false;
+  if (offy > dst.rows ) return false;
+
+  int src_x = 0;
+  int src_y = 0;
+  int src_wd = src.cols;
+  int src_ht = src.rows;
+  if (src.cols + offx > dst.cols) {
+    src_wd = dst.cols - offx;
+  }
+  if (src.rows + offy > dst.rows) {
+    src_ht = dst.rows - offy;
+  }
+
+  VLOG(1) << src_x << " " << src_y << " " << src_wd << " " << src_ht << ", " 
+      << src.cols << " " << src.rows; 
+  cv::Mat src_clipped = src(cv::Rect(src_x, src_y, src_wd, src_ht));
+  
+  cv::Mat dst_roi = dst(cv::Rect(offx, offy, 
+        src_clipped.cols, src_clipped.rows));
+  src_clipped.copyTo(dst_roi);
+
+  return true;
+}
+
 bool resizeImages(
   const std::vector<cv::Mat>& frames_orig, 
   std::vector<cv::Mat>& frames,
@@ -106,17 +134,20 @@ bool resizeImages(
       cv::Mat tmp_aspect = frames_scaled[i]; 
       cv::Mat tmp1 = cv::Mat( sz, tmp_aspect.type(), cv::Scalar::all(0));
 
+      // center the image
       int off_x = (sz.width - tmp_aspect.size().width)/2;
       int off_y = (sz.height - tmp_aspect.size().height)/2;
 
+      renderImage(tmp_aspect, tmp1, off_x, off_y);
+      #if 0
       // TBD put offset so image is centered
       cv::Mat tmp1_roi = tmp1(cv::Rect(off_x, off_y, 
         tmp_aspect.cols, tmp_aspect.rows));
       tmp_aspect.copyTo(tmp1_roi);
+      #endif
 
       VLOG(3) //<< aspect_0 << " " << aspect_1 << ", " 
         << off_x << " " << off_y << " " << tmp_aspect.cols << " " << tmp_aspect.rows;
-
 
       frames.push_back(tmp1);
     }
