@@ -56,27 +56,21 @@ bool resizeImages(
   const double max_scale
   )
 {
+    std::vector<cv::Mat> frames_scaled; 
     frames.clear();
   
     //int mode = cv::INTER_NEAREST;
     //int mode = cv::INTER_CUBIC;
     int mode = cv::INTER_LINEAR;
-    const bool keep_aspect = true; // getSignal("keep_aspect");
 
     for (int i = 0; i < frames_orig.size(); i++) {
       cv::Mat tmp0 = frames_orig[i]; 
       
-      cv::Mat tmp1 = cv::Mat( sz, tmp0.type(), cv::Scalar::all(0));
-      
       const float aspect_0 = (float)tmp0.cols/(float)tmp0.rows;
-      const float aspect_1 = (float)tmp1.cols/(float)tmp1.rows;
-     
-      if (keep_aspect) {
+      const float aspect_1 = (float)sz.width/(float)sz.height;
 
         cv::Size tmp_sz = sz;
 
-        int off_x = 0;
-        int off_y = 0;
         // TBD could have epsilon defined by 1 pixel width
         if (aspect_0 > aspect_1) {
           tmp_sz.height = tmp_sz.width / aspect_0;
@@ -96,23 +90,28 @@ bool resizeImages(
         //  tmp_sz.height = tmp0.rows * max_scale;
         //}
 
-        off_x = (sz.width - tmp_sz.width)/2;
-        off_y = (sz.height - tmp_sz.height)/2;
-        
         cv::Mat tmp_aspect;
         cv::resize( tmp0, tmp_aspect, tmp_sz, 0, 0, mode );
         
-        // TBD put offset so image is centered
-        cv::Mat tmp1_roi = tmp1(cv::Rect(off_x, off_y, tmp_sz.width, tmp_sz.height));
-        tmp_aspect.copyTo(tmp1_roi);
+        frames_scaled.push_back(tmp_aspect);
+    }
 
-        VLOG(3) << aspect_0 << " " << aspect_1 << ", " 
-            << off_x << " " << off_y << " " << tmp_sz.width << " " << tmp_sz.height;
-      } else {
-        cv::resize( tmp0, tmp1, sz, 0, 0, mode );
-      }
+    for (int i = 0; i < frames_orig.size(); i++) {
+      cv::Mat tmp_aspect = frames_scaled[i]; 
+      cv::Mat tmp1 = cv::Mat( sz, tmp_aspect.type(), cv::Scalar::all(0));
 
-      
+      int off_x = (sz.width - tmp_aspect.size().width)/2;
+      int off_y = (sz.height - tmp_aspect.size().height)/2;
+
+      // TBD put offset so image is centered
+      cv::Mat tmp1_roi = tmp1(cv::Rect(off_x, off_y, 
+        tmp_aspect.cols, tmp_aspect.rows));
+      tmp_aspect.copyTo(tmp1_roi);
+
+      VLOG(3) //<< aspect_0 << " " << aspect_1 << ", " 
+        << off_x << " " << off_y << " " << tmp_aspect.cols << " " << tmp_aspect.rows;
+
+
       frames.push_back(tmp1);
     }
 
