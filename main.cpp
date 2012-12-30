@@ -45,6 +45,62 @@
 #define CLTX2 "\e[1;44m"  
 
 
+bool resizeImages(
+  const std::vector<cv::Mat>& frames_orig, 
+  std::vector<cv::Mat>& frames,
+  const cv::Size sz
+  )
+{
+    frames.clear();
+  
+    //int mode = cv::INTER_NEAREST;
+    int mode = cv::INTER_CUBIC;
+    const bool keep_aspect = true; // getSignal("keep_aspect");
+
+    for (int i = 0; i < frames_orig.size(); i++) {
+      cv::Mat tmp0 = frames_orig[i]; 
+      
+      cv::Mat tmp1 = cv::Mat( sz, tmp0.type(), cv::Scalar::all(0));
+      
+      const float aspect_0 = (float)tmp0.cols/(float)tmp0.rows;
+      const float aspect_1 = (float)tmp1.cols/(float)tmp1.rows;
+     
+      if (keep_aspect) {
+
+        cv::Size tmp_sz = sz;
+        
+        int off_x = 0;
+        int off_y = 0;
+        // TBD could have epsilon defined by 1 pixel width
+        if (aspect_0 > aspect_1) {
+          tmp_sz.height = tmp_sz.width / aspect_0;
+          off_y = (sz.height - tmp_sz.height)/2;
+        } else if (aspect_0 < aspect_1) {
+          tmp_sz.width = tmp_sz.height * aspect_0;  
+          off_x = (sz.width - tmp_sz.width)/2;
+        }
+        
+        cv::Mat tmp_aspect;
+        cv::resize( tmp0, tmp_aspect, tmp_sz, 0, 0, mode );
+        
+        // TBD put offset so image is centered
+        cv::Mat tmp1_roi = tmp1(cv::Rect(off_x, off_y, tmp_sz.width, tmp_sz.height));
+        tmp_aspect.copyTo(tmp1_roi);
+
+        VLOG(3) << aspect_0 << " " << aspect_1 << ", " 
+            << off_x << " " << off_y << " " << tmp_sz.width << " " << tmp_sz.height;
+      } else {
+        cv::resize( tmp0, tmp1, sz, 0, 0, mode );
+      }
+
+      
+      frames.push_back(tmp1);
+    }
+
+    return true;
+  }
+
+
 bool loadImages(std::string dir, std::vector<cv::Mat>& frames_orig) 
 {
   std::string name = "vimaj";
@@ -127,25 +183,34 @@ int main( int argc, char* argv[] )
   google::ParseCommandLineFlags(&argc, &argv, false);
 
   std::vector<cv::Mat> frames_orig; 
+  boost::timer t1;
   const bool rv = loadImages(".", frames_orig);
+  LOG(INFO) << "load time " << t1.elapsed();
+  std::vector<cv::Mat> frames; 
+  boost::timer t2;
+  const bool rv2 = resizeImages(frames_orig, frames, cv::Size(1200,850));
+  LOG(INFO) << "resize time " << t2.elapsed();
 
-  bool run = rv;
+  bool run = rv && rv2;
   int ind = 0;
   while (run) {
 
     char key = cv::waitKey(0);
 
+    // there seems to be a delay when key switching, holding down
+    // a key produces all the events I expect but changing from one to another
+    // produces a noticeable pause.
     if (key == 'q') run = false;
     else if (key == 'j') {
       ind += 1;
-      if (ind >= frames_orig.size()) ind = 0;
+      if (ind >= frames.size()) ind = 0;
     }
     else if (key == 'k') {
       ind -= 1;
-      if (ind < 0) ind = frames_orig.size() - 1;
+      if (ind < 0) ind = frames.size() - 1;
     }
 
-    cv::imshow("frames", frames_orig[ind]);
+    cv::imshow("frames", frames[ind]);
   }
   
   return 0;
