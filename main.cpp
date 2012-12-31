@@ -64,6 +64,8 @@ std::vector<cv::Mat> frames;
 boost::thread im_thread;
 boost::mutex im_mutex;
 int ind;
+std::string dir;
+std::vector<std::string> files;
 
 public:
 
@@ -83,11 +85,15 @@ void runThread()
 {
   std::vector<cv::Mat> frames_orig; 
   boost::timer t1;
-  const bool rv = loadImages(".", frames_orig);
+  const bool rv = getFileNames(".");
+  const bool rv2 = loadImages(frames_orig);
   float t1_elapsed = t1.elapsed();
+
   LOG(INFO) << "loaded " << frames_orig.size() << " in time " << t1_elapsed 
       << " " << (float)t1_elapsed/(float)frames_orig.size();
-  const bool rv2 = resizeImages(
+  
+  
+  const bool rv3 = resizeImages(
       frames_orig, frames, 
       sz, max_scale
       );
@@ -253,8 +259,9 @@ bool resizeImages(
   }
 
 
-bool loadImages(std::string dir, std::vector<cv::Mat>& frames_orig) 
+bool getFileNames(std::string dir)
 {
+  this->dir = dir;
   std::string name = "vimaj";
     LOG(INFO) << name << " loading " << dir;
     
@@ -266,7 +273,6 @@ bool loadImages(std::string dir, std::vector<cv::Mat>& frames_orig)
 
     // TBD clear frames first?
     
-    std::vector<std::string> files;
     boost::filesystem::directory_iterator end_itr; // default construction yields past-the-end
     for (boost::filesystem::directory_iterator itr( image_path );
         itr != end_itr;
@@ -279,28 +285,32 @@ bool loadImages(std::string dir, std::vector<cv::Mat>& frames_orig)
       std::string next_im = ( ss.str() );
       // strip off "" at beginning/end
       next_im = next_im.substr(1, next_im.size()-2);
-      files.push_back(next_im);
-   }
-
-   frames_orig.clear();
-
-   sort(files.begin(), files.end());
-  
-   for (int i=0; i < files.size(); i++) {
-      const std::string next_im = files[i];
 
       if (!((next_im.substr(next_im.size()-3,3) != "jpg") || 
             (next_im.substr(next_im.size()-3,3) != "png"))
             ) {
-        LOG(INFO) << "not an image " << next_im;
+        LOG(INFO) << "not expected image type: " << next_im;
         continue;
       }
+
+      files.push_back(next_im);
+   }
+}
+
+bool loadImages(std::vector<cv::Mat>& frames_orig) 
+{
+   frames_orig.clear();
+
+   //sort(files.begin(), files.end());
+  
+   for (int i=0; i < files.size(); i++) {
+      const std::string next_im = files[i];
 
       // TBD only store the names in first pass, then load in second?
       cv::Mat new_out = cv::imread( next_im );
    
       if (new_out.data == NULL) { //.empty()) {
-        LOG(WARNING) << name << " not an image? " << next_im;
+        LOG(WARNING) << " not an image? " << next_im;
         continue;
       }
    
@@ -311,14 +321,14 @@ bool loadImages(std::string dir, std::vector<cv::Mat>& frames_orig)
       //  mixChannels(&new_out, 1, &tmp0, 1, ch, 3 );
 
         
-      VLOG(1) << name << " " << i << " loaded image " << next_im;
+      VLOG(1) << " " << i << " loaded image " << next_im;
 
       frames_orig.push_back(new_out);
     }
     
     /// TBD or has sized increased since beginning of function?
     if (frames_orig.size() == 0) {
-      LOG(ERROR) << name << CLERR << " no images loaded" << CLNRM << " " << dir;
+      LOG(ERROR) << CLERR << " no images loaded" << CLNRM << " " << dir;
       return false;
     }
 
