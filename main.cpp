@@ -28,6 +28,8 @@
 #include <boost/lexical_cast.hpp>
 #include <boost/filesystem/operations.hpp>
 #include <boost/timer.hpp>
+#include <boost/thread.hpp>
+
 
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
@@ -46,28 +48,89 @@
 
 // TBD move to config file in $HOME/.vimaj/config.yml
 DEFINE_int32(width, 1200, "width");
-DEFINE_int32(height, 800, "width");
+DEFINE_int32(height, 800, "height");
 DEFINE_double(max_scale, 1.5, "maximum amount to scale the image");
+
+//namespace bm
+
+class Images
+{
+
+cv::Size sz;
+float max_scale;
+std::vector<cv::Mat> frames_scaled; 
+// rendered, TBD do this live
+std::vector<cv::Mat> frames; 
+boost::thread im_thread;
+boost::mutex im_mutex;
+int ind;
+
+public:
+
+Images(
+  cv::Size sz, 
+  float max_scale
+) :
+  sz(sz),
+  max_scale(max_scale),
+  ind(0)
+{
+  im_thread = boost::thread(&Images::runThread, this);
+  
+} // Images
+
+void runThread() 
+{
+  std::vector<cv::Mat> frames_orig; 
+  boost::timer t1;
+  const bool rv = loadImages(".", frames_orig);
+  float t1_elapsed = t1.elapsed();
+  LOG(INFO) << "loaded " << frames_orig.size() << " in time " << t1_elapsed 
+      << " " << (float)t1_elapsed/(float)frames_orig.size();
+  const bool rv2 = resizeImages(
+      frames_orig, frames, 
+      sz, max_scale
+      );
+
+  // TBD test out freeing up this memory
+  frames_orig.clear();
+
+}
 
 // TBD is this any faster than warpImage?
 bool renderImage(cv::Mat& src, cv::Mat& dst, int offx, int offy)
 {
   if (offx > dst.cols ) return false;
   if (offy > dst.rows ) return false;
+  if (-offx >= src.cols ) return false;
+  if (-offy >= src.rows ) return false;
 
   int src_x = 0;
   int src_y = 0;
   int src_wd = src.cols;
   int src_ht = src.rows;
-  if (src.cols + offx > dst.cols) {
+  if (offx < 0) {
+    src_x = -offx;
+    offx = 0;
+  }
+  if (offy < 0) {
+    src_y = -offy;
+    offy = 0;
+  }
+  if (src.cols + offx - src_x > dst.cols) {
     src_wd = dst.cols - offx;
   }
-  if (src.rows + offy > dst.rows) {
+  if (src.rows + offy - src_y > dst.rows) {
     src_ht = dst.rows - offy;
   }
+  src_wd -= src_x;
+  src_ht -= src_y;
 
-  VLOG(1) << src_x << " " << src_y << " " << src_wd << " " << src_ht << ", " 
-      << src.cols << " " << src.rows; 
+  VLOG(1) << src_x << " " << src_y << " " << src_wd << " " << src_ht 
+      << ", offxy " << offx << " " << offy
+      << ", src " 
+      << src.cols << " " << src.rows << ", dst "
+      << dst.cols << " " << dst.rows; 
   cv::Mat src_clipped = src(cv::Rect(src_x, src_y, src_wd, src_ht));
   
   cv::Mat dst_roi = dst(cv::Rect(offx, offy, 
@@ -77,25 +140,9 @@ bool renderImage(cv::Mat& src, cv::Mat& dst, int offx, int offy)
   return true;
 }
 
-bool resizeImages(
-  const std::vector<cv::Mat>& frames_orig, 
-  std::vector<cv::Mat>& frames,
-  const cv::Size sz,
-  const double max_scale
-  )
+bool resizeImage(const cv::Mat& tmp0, cv::Mat& tmp_aspect, const cv::Size sz)
 {
-  boost::timer t2;
-    std::vector<cv::Mat> frames_scaled; 
-    frames.clear();
-  
-    //int mode = cv::INTER_NEAREST;
-    //int mode = cv::INTER_CUBIC;
-    int mode = cv::INTER_LINEAR;
-
-    for (int i = 0; i < frames_orig.size(); i++) {
-      cv::Mat tmp0 = frames_orig[i]; 
-      
-      const float aspect_0 = (float)tmp0.cols/(float)tmp0.rows;
+const float aspect_0 = (float)tmp0.cols/(float)tmp0.rows;
       const float aspect_1 = (float)sz.width/(float)sz.height;
 
         cv::Size tmp_sz = sz;
@@ -119,10 +166,70 @@ bool resizeImages(
         //  tmp_sz.height = tmp0.rows * max_scale;
         //}
 
-        cv::Mat tmp_aspect;
-        cv::resize( tmp0, tmp_aspect, tmp_sz, 0, 0, mode );
-        
-        frames_scaled.push_back(tmp_aspect);
+    //int mode = cv::INTER_NEAREST;
+    //int mode = cv::INTER_CUBIC;
+    int mode = cv::INTER_LINEAR;
+    
+    cv::resize( tmp0, tmp_aspect, tmp_sz, 0, 0, mode );
+  return true;
+
+}
+
+bool renderMultiImage(const int i, cv::Mat& tmp1)
+{
+  cv::Mat tmp_aspect = frames_scaled[i];
+  tmp1 = cv::Mat( sz, tmp_aspect.type(), cv::Scalar::all(0));
+
+  // center the image
+  int off_x = (sz.width - tmp_aspect.size().width)/2;
+  int off_y = (sz.height - tmp_aspect.size().height)/2;
+
+  int ind_prev = ((i-1)+frames_scaled.size()) % frames_scaled.size();
+  int ind_next = ((i+1)+frames_scaled.size()) % frames_scaled.size();
+
+  // TBD flag?
+  int border = 4;
+  // TBD off_y should be a function of sz and the prev/next image size
+  renderImage(frames_scaled[ind_prev], tmp1, 
+      off_x - frames_scaled[ind_prev].cols - border, off_y);
+  renderImage(frames_scaled[ind_next], tmp1, 
+      off_x + tmp_aspect.size().width + border, off_y);
+  renderImage(tmp_aspect, tmp1, off_x, off_y);
+
+#if 0
+  // TBD put offset so image is centered
+  cv::Mat tmp1_roi = tmp1(cv::Rect(off_x, off_y, 
+        tmp_aspect.cols, tmp_aspect.rows));
+  tmp_aspect.copyTo(tmp1_roi);
+#endif
+
+  VLOG(3) //<< aspect_0 << " " << aspect_1 << ", " 
+    << off_x << " " << off_y << " " << tmp_aspect.cols << " " << tmp_aspect.rows;
+
+  return true;
+}
+
+bool resizeImages(
+    const std::vector<cv::Mat>& frames_orig, 
+    std::vector<cv::Mat>& frames,
+    const cv::Size sz,
+    const double max_scale
+    )
+{
+  boost::timer t2;
+
+  {
+    boost::mutex::scoped_lock l(im_mutex);
+    frames.clear();
+  }
+
+    for (int i = 0; i < frames_orig.size(); i++) {
+      cv::Mat tmp0 = frames_orig[i]; 
+      
+      cv::Mat tmp_aspect;
+      resizeImage(tmp0, tmp_aspect, sz);
+
+      frames_scaled.push_back(tmp_aspect);
     }
 
     float t2_elapsed = t2.elapsed();
@@ -131,24 +238,10 @@ bool resizeImages(
 
     boost::timer t1;
     for (int i = 0; i < frames_orig.size(); i++) {
-      cv::Mat tmp_aspect = frames_scaled[i]; 
-      cv::Mat tmp1 = cv::Mat( sz, tmp_aspect.type(), cv::Scalar::all(0));
+      cv::Mat tmp1;
+      renderMultiImage(i, tmp1);
 
-      // center the image
-      int off_x = (sz.width - tmp_aspect.size().width)/2;
-      int off_y = (sz.height - tmp_aspect.size().height)/2;
-
-      renderImage(tmp_aspect, tmp1, off_x, off_y);
-      #if 0
-      // TBD put offset so image is centered
-      cv::Mat tmp1_roi = tmp1(cv::Rect(off_x, off_y, 
-        tmp_aspect.cols, tmp_aspect.rows));
-      tmp_aspect.copyTo(tmp1_roi);
-      #endif
-
-      VLOG(3) //<< aspect_0 << " " << aspect_1 << ", " 
-        << off_x << " " << off_y << " " << tmp_aspect.cols << " " << tmp_aspect.rows;
-
+      boost::mutex::scoped_lock l(im_mutex);
       frames.push_back(tmp1);
     }
 
@@ -231,8 +324,36 @@ bool loadImages(std::string dir, std::vector<cv::Mat>& frames_orig)
 
     return true;
 }
-/*
 
+  cv::Mat getCurFrame() 
+  {
+    
+    boost::mutex::scoped_lock l(im_mutex);
+    if (frames.size() == 0) return cv::Mat();
+    return frames[ind];
+  }
+
+  cv::Mat getNextFrame() 
+  {
+    ind += 1;
+    boost::mutex::scoped_lock l(im_mutex);
+    if (frames.size() == 0) return cv::Mat();
+    if (ind >= frames.size()) ind = 0;
+    return frames[ind];
+  }
+
+  cv::Mat getPrevFrame() 
+  {
+    ind -= 1;
+    boost::mutex::scoped_lock l(im_mutex);
+    if (frames.size() == 0) return cv::Mat();
+    if (ind < 0) ind = frames.size() - 1;
+    return frames[ind];
+  }
+
+};
+
+/*
 
  */
 int main( int argc, char* argv[] )
@@ -241,40 +362,35 @@ int main( int argc, char* argv[] )
   google::LogToStderr();
   google::ParseCommandLineFlags(&argc, &argv, false);
 
-  std::vector<cv::Mat> frames_orig; 
-  boost::timer t1;
-  const bool rv = loadImages(".", frames_orig);
-  float t1_elapsed = t1.elapsed();
-  LOG(INFO) << "loaded " << frames_orig.size() << " in time " << t1_elapsed 
-      << " " << (float)t1_elapsed/(float)frames_orig.size();
-  std::vector<cv::Mat> frames; 
-  const bool rv2 = resizeImages(frames_orig, frames, 
+
+  Images* images = new Images(
       cv::Size(FLAGS_width, FLAGS_height),
       FLAGS_max_scale
       );
-  
+
   cv::namedWindow("frames", CV_GUI_NORMAL | CV_WINDOW_AUTOSIZE);
 
-  bool run = rv && rv2;
-  int ind = 0;
+  cv::Mat im = images->getCurFrame();
+  
+  bool run = true; // rv && rv2;
   while (run) {
 
     char key = cv::waitKey(0);
-
+    
     // there seems to be a delay when key switching, holding down
     // a key produces all the events I expect but changing from one to another
     // produces a noticeable pause.
     if (key == 'q') run = false;
     else if (key == 'j') {
-      ind += 1;
-      if (ind >= frames.size()) ind = 0;
+      im = images->getNextFrame();     
     }
     else if (key == 'k') {
-      ind -= 1;
-      if (ind < 0) ind = frames.size() - 1;
+      im = images->getPrevFrame();
     }
 
-    cv::imshow("frames", frames[ind]);
+    if (!im.empty()) {
+      cv::imshow("frames", im);
+    }
   }
   
   return 0;
