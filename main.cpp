@@ -66,6 +66,7 @@ boost::mutex im_mutex;
 boost::mutex im_scaled_mutex;
 std::string dir;
 std::vector<std::string> files;
+std::vector<std::string> files_used;
 
 public:
 
@@ -90,15 +91,7 @@ void runThread()
   const bool rv = getFileNames(".");
 
   const bool rv2 = loadAndResizeImages(frames_orig, frames, sz, max_scale);
-  #if 0
-  const bool rv2 = loadImages(frames_orig);
-
-  const bool rv3 = resizeImages(
-      frames_orig, frames, 
-      sz, max_scale
-      );
-  #endif
-
+  
   float t1_elapsed = t1.elapsed();
 
   LOG(INFO) << "loaded " << frames_orig.size() << " in time " << t1_elapsed 
@@ -190,7 +183,13 @@ bool renderMultiImage(const int i, cv::Mat& tmp1)
 {
   int ind = i;
   cv::Mat tmp_aspect = getScaledFrame(ind);
+
   tmp1 = cv::Mat( sz, tmp_aspect.type(), cv::Scalar::all(0));
+  
+  if (tmp_aspect.empty()) {
+    LOG(INFO) << "scaled frame " << ind << " is empty";
+    return false;
+  }
 
   // center the image
   int off_x = (sz.width - tmp_aspect.size().width)/2;
@@ -199,16 +198,18 @@ bool renderMultiImage(const int i, cv::Mat& tmp1)
   // TBD flag?
   int border = 4;
   // TBD off_y should be a function of sz and the prev/next image size
-  ind-=1;
-  cv::Mat prev = getScaledFrame(ind);
+  int ind2 = ind - 1;
+  cv::Mat prev = getScaledFrame(ind2);
+  
+  if (ind2 != i) {
+    renderImage(prev, tmp1, 
+        off_x - prev.cols - border, off_y);
 
-  renderImage(prev, tmp1, 
-      off_x - prev.cols - border, off_y);
-
-  ind+=2;
-  cv::Mat next = getScaledFrame(ind);
-  renderImage(next, tmp1, 
-      off_x + tmp_aspect.size().width + border, off_y);
+    ind2 = ind + 1;
+    cv::Mat next = getScaledFrame(ind);
+    renderImage(next, tmp1, 
+        off_x + tmp_aspect.size().width + border, off_y);
+  }
   renderImage(tmp_aspect, tmp1, off_x, off_y);
 
 #if 0
@@ -221,6 +222,8 @@ bool renderMultiImage(const int i, cv::Mat& tmp1)
   VLOG(3) //<< aspect_0 << " " << aspect_1 << ", " 
     << off_x << " " << off_y << " " << tmp_aspect.cols << " " << tmp_aspect.rows;
 
+  cv::putText(tmp1, files_used[ind], cv::Point(10, 10), 1, 1, cv::Scalar::all(255) );
+
   return true;
 }
 
@@ -232,7 +235,9 @@ bool loadAndResizeImages(
     )
 {
 
+  frames.clear();
   frames_orig.clear();
+  frames_scaled.clear();
 
   // TBD make optional
   sort(files.begin(), files.end());
@@ -248,6 +253,8 @@ bool loadAndResizeImages(
       continue;
     }
 
+    files_used.push_back(files[i]);
+    
     VLOG(1) << " " << i << " loaded image " << next_im;
 
     frames_orig.push_back(new_out);
@@ -260,9 +267,13 @@ bool loadAndResizeImages(
       frames_scaled.push_back(frame_scaled);
     }
     
-    if (i > 3) {
-      cv::Mat multi_im;
-      renderMultiImage(i-1, multi_im);
+    cv::Mat multi_im;
+    if (i < 1) {
+      renderMultiImage(i, multi_im);
+      frames.push_back(multi_im);
+    } else 
+    if (i > 1) {
+      renderMultiImage(i - 1, multi_im);
       {
         boost::mutex::scoped_lock l(im_mutex);
         frames.push_back(multi_im);
@@ -275,61 +286,23 @@ bool loadAndResizeImages(
   renderMultiImage(0, multi_im);
   {
     boost::mutex::scoped_lock l(im_mutex);
-    frames.push_back(multi_im);
+    frames[0] = multi_im;
   }
   
+  // now fill unrendered frames
+  renderMultiImage(1, multi_im);
+  {
+    boost::mutex::scoped_lock l(im_mutex);
+    frames[1] = multi_im;
+  }
+
   renderMultiImage(frames_scaled.size()-1, multi_im);
   {
     boost::mutex::scoped_lock l(im_mutex);
     frames.push_back(multi_im);
   }
 
-
-
 } // loadAndResizeImages
-
-bool resizeImages(
-    const std::vector<cv::Mat>& frames_orig, 
-    std::vector<cv::Mat>& frames,
-    const cv::Size sz,
-    const double max_scale
-    )
-{
-  boost::timer t2;
-
-  {
-    boost::mutex::scoped_lock l(im_mutex);
-    frames.clear();
-  }
-
-  for (int i = 0; i < frames_orig.size(); i++) {
-    cv::Mat tmp0 = frames_orig[i]; 
-
-    cv::Mat tmp_aspect;
-    resizeImage(tmp0, tmp_aspect, sz);
-
-    frames_scaled.push_back(tmp_aspect);
-  }
-
-    float t2_elapsed = t2.elapsed();
-    LOG(INFO) << "scale time " << t2_elapsed
-      << " " << (float)t2_elapsed/(float)frames_scaled.size();
-
-    boost::timer t1;
-    for (int i = 0; i < frames_orig.size(); i++) {
-      cv::Mat tmp1;
-      renderMultiImage(i, tmp1);
-
-      boost::mutex::scoped_lock l(im_mutex);
-      frames.push_back(tmp1);
-    }
-
-    float t1_elapsed = t1.elapsed();
-    LOG(INFO) << "render time " << t1_elapsed
-      << " " << (float)t1_elapsed/(float)frames_scaled.size();
-
-    return true;
-  }
 
 
 bool getFileNames(std::string dir)
@@ -370,43 +343,6 @@ bool getFileNames(std::string dir)
    }
 }
 
-bool loadImages(std::vector<cv::Mat>& frames_orig) 
-{
-   frames_orig.clear();
-
-   //sort(files.begin(), files.end());
-  
-   for (int i=0; i < files.size(); i++) {
-      const std::string next_im = files[i];
-
-      // TBD only store the names in first pass, then load in second?
-      cv::Mat new_out = cv::imread( next_im );
-   
-      if (new_out.data == NULL) { //.empty()) {
-        LOG(WARNING) << " not an image? " << next_im;
-        continue;
-      }
-   
-     
-      //cv::Mat tmp0 = cv::Mat(new_out.size(), CV_8UC4, cv::Scalar(0)); 
-        // just calling reshape(4) doesn't do the channel reassignment like this does
-      //  int ch[] = {0,0, 1,1, 2,2}; 
-      //  mixChannels(&new_out, 1, &tmp0, 1, ch, 3 );
-
-        
-      VLOG(1) << " " << i << " loaded image " << next_im;
-
-      frames_orig.push_back(new_out);
-    }
-    
-    /// TBD or has sized increased since beginning of function?
-    if (frames_orig.size() == 0) {
-      LOG(ERROR) << CLERR << " no images loaded" << CLNRM << " " << dir;
-      return false;
-    }
-
-    return true;
-}
 
   /////////////////////////////////
   cv::Mat getScaledFrame(int& ind) 
@@ -427,6 +363,12 @@ bool loadImages(std::vector<cv::Mat>& frames_orig)
     return frames[ind];
   }
 
+  int getNum() 
+  {
+    boost::mutex::scoped_lock l(im_mutex);
+    return frames.size();
+  }
+
 };
 
 /*
@@ -444,11 +386,21 @@ int main( int argc, char* argv[] )
       FLAGS_max_scale
       );
 
+  while(images->getNum() == 0) {
+    usleep(100000);
+  }
+
   cv::namedWindow("frames", CV_GUI_NORMAL | CV_WINDOW_AUTOSIZE);
 
   
   bool run = true; // rv && rv2;
   while (run) {
+
+    cv::Mat im = images->getFrame(images->ind);
+    
+    if (!im.empty()) {
+      cv::imshow("frames", im);
+    }
 
     char key = cv::waitKey(0);
     
@@ -462,12 +414,10 @@ int main( int argc, char* argv[] )
     else if (key == 'k') {
       images->ind -= 1;
     }
-
-    cv::Mat im = images->getFrame(images->ind);
-
-    if (!im.empty()) {
-      cv::imshow("frames", im);
+    else if (key == 'n') {
+      images->ind = 0;
     }
+
   }
   
   return 0;
