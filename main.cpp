@@ -183,28 +183,46 @@ bool clipZoom(const cv::Mat& src, cv::Mat& dst,
   if (desired_sz.width > sz.width) {
     offset.x = (desired_sz.width - sz.width)*pos.x;
     width_fract = (float)sz.width/(float)desired_sz.width;
-    
+  } else {
+    actual_sz.width = desired_sz.width;
   }
+
   float height_fract = 1.0;
   if (desired_sz.height > sz.height) {
     offset.y = (desired_sz.height - sz.height)*pos.y;
     height_fract = (float)sz.height/(float)desired_sz.height;
+  } else {
+    actual_sz.height = desired_sz.height;
   }
-  
-  actual_sz.width *= width_fract;
-  actual_sz.height *= height_fract;
-
+ 
   // offset is in the desired_sz scale, need to scale it down 
   cv::Rect roi; // = cv::Rect(0, 0, src.cols, src.rows);
   
   roi.width = width_fract * src.cols;
-  roi.x = (src.cols - roi.width) * width_fract;
+  roi.x = (src.cols - roi.width) * pos.x;
   
   roi.height = height_fract * src.rows;
-  roi.y = (src.rows - roi.height) * height_fract;
+  roi.y = (src.rows - roi.height) * pos.y;
 
   const int mode = cv::INTER_NEAREST;
-  cv::resize( src(roi), dst, actual_sz, 0, 0, mode );
+  cv::Mat resized;
+  cv::resize( src(roi), resized, actual_sz, 0, 0, mode );
+  
+  if ((actual_sz.height < sz.height) || (actual_sz.width < sz.width)) {
+    dst = cv::Mat(sz, resized.type(), cv::Scalar::all(0));
+    
+    cv::Rect roi = cv::Rect( (sz.width - resized.cols)/2, (sz.height - resized.rows)/2 ,
+        resized.cols, resized.rows );
+    
+    cv::Mat dst_roi = dst(roi);
+    resized.copyTo(dst_roi);
+
+  } else {
+    dst = resized;
+  }
+
+  LOG(INFO) << sz.width << " " << sz.height << ", " 
+      << resized.cols << " " << resized.rows << " " << zoom;
 
   return true;
 }
