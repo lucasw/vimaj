@@ -70,6 +70,8 @@ std::vector<std::string> files_used;
 
 public:
 
+bool continue_loading;
+
 int ind;
 
 Images(
@@ -78,27 +80,30 @@ Images(
 ) :
   sz(sz),
   max_scale(max_scale),
+  continue_loading(true),
   ind(0)
 {
   im_thread = boost::thread(&Images::runThread, this);
   
 } // Images
 
+~Images() 
+{
+  im_thread.join();
+}
+
 void runThread() 
 {
-  std::vector<cv::Mat> frames_orig; 
   boost::timer t1;
   const bool rv = getFileNames(".");
 
-  const bool rv2 = loadAndResizeImages(frames_orig, frames, sz, max_scale);
+  const bool rv2 = loadAndResizeImages(frames, sz, max_scale);
   
   float t1_elapsed = t1.elapsed();
 
-  LOG(INFO) << "loaded " << frames_orig.size() << " in time " << t1_elapsed 
-      << " " << (float)t1_elapsed/(float)frames_scaled.size();
+  LOG(INFO) << "loaded " << frames.size() << " in time " << t1_elapsed 
+      << " " << (float)t1_elapsed/(float)frames.size();
   
-  // TBD test out freeing up this memory
-  //frames_orig.clear();
 }
 
 // TBD is this any faster than warpImage?
@@ -228,21 +233,21 @@ bool renderMultiImage(const int i, cv::Mat& tmp1)
 }
 
 bool loadAndResizeImages(
-    std::vector<cv::Mat>& frames_orig, 
     std::vector<cv::Mat>& frames,
     const cv::Size sz,
     const double max_scale
     )
 {
-
+  //std::vector<cv::Mat>& frames_orig, 
+  //frames_orig.clear();
   frames.clear();
-  frames_orig.clear();
   frames_scaled.clear();
 
   // TBD make optional
   sort(files.begin(), files.end());
 
-  for (int i = 0; i < files.size(); i++) {
+  for (int i = 0; i < files.size(), continue_loading == true; i++) {
+     
     const std::string next_im = files[i];
 
     // TBD only store the names in first pass, then load in second?
@@ -257,7 +262,7 @@ bool loadAndResizeImages(
     
     VLOG(1) << " " << i << " loaded image " << next_im;
 
-    frames_orig.push_back(new_out);
+    //frames_orig.push_back(new_out);
 
     cv::Mat frame_scaled;
     resizeImage(new_out, frame_scaled, sz);
@@ -278,8 +283,15 @@ bool loadAndResizeImages(
         boost::mutex::scoped_lock l(im_mutex);
         frames.push_back(multi_im);
       }
-    } // 
 
+    } //
+    
+    if (i % 20 == 0) LOG(INFO) << "loaded " << i;
+    // clear frames as we go 
+    if (true && (i > 3)) {
+      boost::mutex::scoped_lock l(im_scaled_mutex);
+      frames_scaled[i-2].release();
+    }
   } // files loop
 
   cv::Mat multi_im;
@@ -301,6 +313,8 @@ bool loadAndResizeImages(
     boost::mutex::scoped_lock l(im_mutex);
     frames.push_back(multi_im);
   }
+  
+  frames_scaled.clear();
 
 } // loadAndResizeImages
 
@@ -332,10 +346,10 @@ bool getFileNames(std::string dir)
       // strip off "" at beginning/end
       next_im = next_im.substr(1, next_im.size()-2);
 
-      if (!((next_im.substr(next_im.size()-3,3) != "jpg") || 
-            (next_im.substr(next_im.size()-3,3) != "png"))
+      if (!((next_im.substr(next_im.size()-3,3) == "jpg") || 
+            (next_im.substr(next_im.size()-3,3) == "png"))
             ) {
-        LOG(INFO) << "not expected image type: " << next_im;
+        //LOG(INFO) << "not expected image type: " << next_im;
         continue;
       }
 
@@ -381,17 +395,24 @@ int main( int argc, char* argv[] )
   google::ParseCommandLineFlags(&argc, &argv, false);
 
 
+  boost::timer t1;
   Images* images = new Images(
       cv::Size(FLAGS_width, FLAGS_height),
       FLAGS_max_scale
       );
+  // this is effectively 0 to do above
 
-  while(images->getNum() == 0) {
-    usleep(100000);
-  }
-
+  // this take about 0.2 seconds, how fast is raw Xlib in vimjay for comparison?
   cv::namedWindow("frames", CV_GUI_NORMAL | CV_WINDOW_AUTOSIZE);
+  double win_time = t1.elapsed();
 
+  /// this probably is already done by the time the above window is created
+  while(images->getNum() == 0) {
+    usleep(30000);
+  }
+  
+  LOG(INFO) << t1.elapsed() << " to first frame";
+  LOG(INFO) << win_time << " for window";
   
   bool run = true; // rv && rv2;
   while (run) {
@@ -407,7 +428,11 @@ int main( int argc, char* argv[] )
     // there seems to be a delay when key switching, holding down
     // a key produces all the events I expect but changing from one to another
     // produces a noticeable pause.
-    if (key == 'q') run = false;
+    if (key == 'q') {
+      run = false;
+      images->continue_loading = false;
+      delete images;
+    }
     else if (key == 'j') {
       images->ind += 1;
     }
