@@ -97,7 +97,7 @@ void runThread()
   boost::timer t1;
   const bool rv = getFileNames(".");
 
-  const bool rv2 = loadAndResizeImages(frames, sz, max_scale);
+  const bool rv2 = loadAndResizeImages(sz, max_scale);
   
   float t1_elapsed = t1.elapsed();
 
@@ -233,7 +233,7 @@ bool renderMultiImage(const int i, cv::Mat& tmp1)
 }
 
 bool loadAndResizeImages(
-    std::vector<cv::Mat>& frames,
+    //std::vector<cv::Mat>& frames,
     const cv::Size sz,
     const double max_scale
     )
@@ -246,21 +246,23 @@ bool loadAndResizeImages(
   // TBD make optional
   sort(files.begin(), files.end());
 
-  for (int i = 0; i < files.size(), continue_loading == true; i++) {
+  LOG(INFO) << "loading " << files.size() << " files";
+
+  for (int i = 0; (i < files.size()) && (continue_loading == true); i++) {
      
-    //const std::string next_im = files[i];
+    const std::string next_im = files[i];
 
     // TBD only store the names in first pass, then load in second?
-    cv::Mat new_out = cv::imread( files[i] );
+    cv::Mat new_out = cv::imread( next_im );
 
     if (new_out.data == NULL) { //.empty()) {
-      LOG(WARNING) << " not an image? " << files[i];
+      LOG(WARNING) << " not an image? " << next_im;
       continue;
     }
 
     files_used.push_back(files[i]);
     
-    VLOG(1) << " " << i << " loaded image " << files[i];
+    VLOG(1) << " " << i << " loaded image " << next_im;
 
     //frames_orig.push_back(new_out);
 
@@ -288,7 +290,7 @@ bool loadAndResizeImages(
     
     if (i % 20 == 0) LOG(INFO) << "loaded " << i;
     // clear frames as we go 
-    if (true && (i > 3)) {
+    if (false && (i > 3)) {
       boost::mutex::scoped_lock l(im_scaled_mutex);
       frames_scaled[i-2].release();
     }
