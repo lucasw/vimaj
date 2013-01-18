@@ -56,8 +56,11 @@ DEFINE_double(max_scale, 1.5, "maximum amount to scale the image");
 class Images
 {
 
+float progress;
+
 cv::Size sz;
 float max_scale;
+std::vector<cv::Mat> frames_orig; 
 std::vector<cv::Mat> frames_scaled; 
 // rendered, TBD do this live
 std::vector<cv::Mat> frames_rendered; 
@@ -81,7 +84,8 @@ Images(
   sz(sz),
   max_scale(max_scale),
   continue_loading(true),
-  ind(0)
+  ind(0),
+  progress(0.0)
 {
   im_thread = boost::thread(&Images::runThread, this);
   
@@ -101,8 +105,8 @@ void runThread()
   
   float t1_elapsed = t1.elapsed();
 
-  LOG(INFO) << "loaded " << frames_rendered.size() << " in time " << t1_elapsed 
-      << " " << (float)t1_elapsed/(float)frames_rendered.size();
+  LOG(INFO) << "loaded " << getNum() << " in time " << t1_elapsed 
+      << " " << (float)t1_elapsed/(float)getNum();
   
 }
 
@@ -149,10 +153,68 @@ bool renderImage(cv::Mat& src, cv::Mat& dst, int offx, int offy)
   return true;
 }
 
+/*
+  Figure out the zoom from the auto resized image and multiply the user specified zoom
+  before handing the image to this
+  pos is normalized 0.0-1.0
+
+   ______________
+  |              |
+  |              |
+  |              |
+  |              |
+  |______________|
+
+  IF the source image is scaled so the height is taller than the size sz, then the height
+  has to be limited to sz.height and the roi within src sized and positioned accordingly.
+
+*/
+bool clipZoom(const cv::Mat& src, cv::Mat& dst, 
+  const cv::Size sz, 
+  const float zoom = 1.0, const cv::Point2f pos=cv::Point2f(0.5,0.5))
+{
+  cv::Size desired_sz = cv::Size(src.size().width * zoom, src.size().height * zoom);
+  
+  cv::Size actual_sz = sz;
+
+  cv::Point2f offset = cv::Point2f(0,0);
+
+  float width_fract = 1.0;
+  if (desired_sz.width > sz.width) {
+    offset.x = (desired_sz.width - sz.width)*pos.x;
+    width_fract = (float)sz.width/(float)desired_sz.width;
+    
+  }
+  float height_fract = 1.0;
+  if (desired_sz.height > sz.height) {
+    offset.y = (desired_sz.height - sz.height)*pos.y;
+    height_fract = (float)sz.height/(float)desired_sz.height;
+  }
+  
+  actual_sz.width *= width_fract;
+  actual_sz.height *= height_fract;
+
+  // offset is in the desired_sz scale, need to scale it down 
+  cv::Rect roi; // = cv::Rect(0, 0, src.cols, src.rows);
+  
+  roi.width = width_fract * src.cols;
+  roi.x = (src.cols - roi.width) * width_fract;
+  
+  roi.height = height_fract * src.rows;
+  roi.y = (src.rows - roi.height) * height_fract;
+
+  const int mode = cv::INTER_NEAREST;
+  cv::resize( src(roi), dst, actual_sz, 0, 0, mode );
+
+  return true;
+}
+
+/* resize the image into a new image of a fixed size, automatically scale it down to fit 
+*/
 bool resizeImage(const cv::Mat& tmp0, cv::Mat& tmp_aspect, const cv::Size sz)
 {
-const float aspect_0 = (float)tmp0.cols/(float)tmp0.rows;
-      const float aspect_1 = (float)sz.width/(float)sz.height;
+  const float aspect_0 = (float)tmp0.cols/(float)tmp0.rows;
+  const float aspect_1 = (float)sz.width/(float)sz.height;
 
         cv::Size tmp_sz = sz;
 
@@ -226,8 +288,11 @@ bool renderMultiImage(const int i, cv::Mat& tmp1)
 
   VLOG(3) //<< aspect_0 << " " << aspect_1 << ", " 
     << off_x << " " << off_y << " " << tmp_aspect.cols << " " << tmp_aspect.rows;
-
-  cv::putText(tmp1, files_used[ind], cv::Point(10, 10), 1, 1, cv::Scalar::all(255) );
+  
+  std::stringstream ss;
+  ss <<ind << "/" << getNum();
+  cv::putText(tmp1, ss.str(), cv::Point(10, 10), 1, 1, cv::Scalar(255,200,210) );
+  cv::putText(tmp1, files_used[ind], cv::Point(100, 10), 1, 1, cv::Scalar::all(255) );
 
   return true;
 }
@@ -238,8 +303,7 @@ bool loadAndResizeImages(
     const double max_scale
     )
 {
-  //std::vector<cv::Mat>& frames_orig, 
-  //frames_orig.clear();
+  frames_orig.clear();
   frames_rendered.clear();
   frames_scaled.clear();
 
@@ -249,7 +313,7 @@ bool loadAndResizeImages(
   LOG(INFO) << "loading " << files.size() << " files";
 
   for (int i = 0; (i < files.size()) && (continue_loading == true); i++) {
-     
+    
     const std::string next_im = files[i];
 
     // TBD only store the names in first pass, then load in second?
@@ -264,7 +328,7 @@ bool loadAndResizeImages(
     
     VLOG(1) << " " << i << " loaded image " << next_im;
 
-    //frames_orig.push_back(new_out);
+    frames_orig.push_back(new_out);
 
     cv::Mat frame_scaled;
     resizeImage(new_out, frame_scaled, sz);
@@ -296,6 +360,8 @@ bool loadAndResizeImages(
       frames_scaled[i-2].release();
     }
     #endif
+    
+    progress = (float)i/(float)files.size();
   } // files loop
 
   #if 0
@@ -377,17 +443,23 @@ bool getFileNames(std::string dir)
   */
   cv::Mat getFrame(int& ind, const double zoom = 1.0) 
   {
-    cv::Mat multi_im;
     ind = (ind + frames_scaled.size()) % frames_scaled.size();
-    renderMultiImage(ind, multi_im);
-    return multi_im;
+    if (zoom == 1.0) {
+      cv::Mat multi_im;
+      renderMultiImage(ind, multi_im);
+      return multi_im;
+    } else {
+      cv::Mat dst;
+      clipZoom(frames_orig[ind], dst,
+        sz,
+        zoom * (float)frames_scaled[ind].cols/(float)frames_orig[ind].cols);
+      return dst;
+    }
     // it would be nice to
     #if 0
-    if (zoom == 1.0) {
       boost::mutex::scoped_lock l(im_mutex);
       if (frames_rendered.size() == 0) return cv::Mat();
       return frames_rendered[ind];
-    }
     #endif
   }
 
@@ -460,6 +532,16 @@ int main( int argc, char* argv[] )
     else if (key == 'n') {
       images->ind = 0;
     }
+    else if (key == 'h') {
+      zoom *= 1.1;
+      if (zoom > 32.0) zoom = 32.0;
+    }
+    else if (key == 'l') {
+      zoom *= 0.95;
+      if (zoom < 1.0) zoom = 1.0;
+    }
+
+
 
   }
   
