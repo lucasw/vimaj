@@ -248,19 +248,19 @@ bool loadAndResizeImages(
 
   for (int i = 0; i < files.size(), continue_loading == true; i++) {
      
-    const std::string next_im = files[i];
+    //const std::string next_im = files[i];
 
     // TBD only store the names in first pass, then load in second?
-    cv::Mat new_out = cv::imread( next_im );
+    cv::Mat new_out = cv::imread( files[i] );
 
     if (new_out.data == NULL) { //.empty()) {
-      LOG(WARNING) << " not an image? " << next_im;
+      LOG(WARNING) << " not an image? " << files[i];
       continue;
     }
 
     files_used.push_back(files[i]);
     
-    VLOG(1) << " " << i << " loaded image " << next_im;
+    VLOG(1) << " " << i << " loaded image " << files[i];
 
     //frames_orig.push_back(new_out);
 
