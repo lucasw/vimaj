@@ -221,7 +221,7 @@ bool clipZoom(const cv::Mat& src, cv::Mat& dst,
     dst = resized;
   }
 
-  LOG(INFO) << sz.width << " " << sz.height << ", " 
+  VLOG(2) << sz.width << " " << sz.height << ", " 
       << resized.cols << " " << resized.rows << " " << zoom;
 
   return true;
@@ -459,7 +459,7 @@ bool getFileNames(std::string dir)
 
   /* get a rendered multi frame 
   */
-  cv::Mat getFrame(int& ind, const double zoom = 1.0) 
+  cv::Mat getFrame(int& ind, const double zoom = 1.0, cv::Point2f pos= cv::Point2f(0.5,0.5)) 
   {
     ind = (ind + frames_scaled.size()) % frames_scaled.size();
     if (zoom == 1.0) {
@@ -470,7 +470,9 @@ bool getFileNames(std::string dir)
       cv::Mat dst;
       clipZoom(frames_orig[ind], dst,
         sz,
-        zoom * (float)frames_scaled[ind].cols/(float)frames_orig[ind].cols);
+        zoom * (float)frames_scaled[ind].cols/(float)frames_orig[ind].cols,
+        pos
+        );
       return dst;
     }
     // it would be nice to
@@ -522,10 +524,15 @@ int main( int argc, char* argv[] )
   
   double zoom = 1.0;
 
+  // where zoom center is
+  // TBD should image class store this per image?
+  // also panning around ought to be in pixel increments for big zooms
+  cv::Point2f pos = cv::Point2f(0.5,0.5);
+
   bool run = true; // rv && rv2;
   while (run) {
 
-    cv::Mat im = images->getFrame(images->ind, zoom);
+    cv::Mat im = images->getFrame(images->ind, zoom, pos);
     
     if (!im.empty()) {
       cv::imshow("frames", im);
@@ -558,8 +565,27 @@ int main( int argc, char* argv[] )
       zoom *= 0.95;
       if (zoom < 1.0) zoom = 1.0;
     }
-
-
+    // scroll around
+    else if (key == 's') {
+      pos.x *= (1.0 - 0.05/zoom);
+      pos.x -= 0.01/zoom;
+      if (pos.x < 0) pos.x = 0;
+    }
+    else if (key == 'd') {
+      pos.x *= (1.0 + 0.04/zoom);
+      pos.x += 0.011/zoom;
+      if (pos.x > 1.0) pos.x = 1.0;
+    }
+    else if (key == 'f') {
+      pos.y *= (1.0 + 0.05/zoom);
+      pos.y += 0.011/zoom;
+      if (pos.y > 1.0) pos.y = 1.0;
+    }
+    else if (key == 'a') {
+      pos.y *= (1.0 - 0.04/zoom);
+      pos.y -= 0.01/zoom;
+      if (pos.y < 0.0) pos.y = 0.0;
+    }
 
   }
   
