@@ -60,7 +60,7 @@ cv::Size sz;
 float max_scale;
 std::vector<cv::Mat> frames_scaled; 
 // rendered, TBD do this live
-std::vector<cv::Mat> frames; 
+std::vector<cv::Mat> frames_rendered; 
 boost::thread im_thread;
 boost::mutex im_mutex;
 boost::mutex im_scaled_mutex;
@@ -101,8 +101,8 @@ void runThread()
   
   float t1_elapsed = t1.elapsed();
 
-  LOG(INFO) << "loaded " << frames.size() << " in time " << t1_elapsed 
-      << " " << (float)t1_elapsed/(float)frames.size();
+  LOG(INFO) << "loaded " << frames_rendered.size() << " in time " << t1_elapsed 
+      << " " << (float)t1_elapsed/(float)frames_rendered.size();
   
 }
 
@@ -240,7 +240,7 @@ bool loadAndResizeImages(
 {
   //std::vector<cv::Mat>& frames_orig, 
   //frames_orig.clear();
-  frames.clear();
+  frames_rendered.clear();
   frames_scaled.clear();
 
   // TBD make optional
@@ -273,50 +273,54 @@ bool loadAndResizeImages(
       boost::mutex::scoped_lock l(im_scaled_mutex);
       frames_scaled.push_back(frame_scaled);
     }
-    
+   
+    #if 0
     cv::Mat multi_im;
     if (i < 1) {
       renderMultiImage(i, multi_im);
-      frames.push_back(multi_im);
+      frames_rendered.push_back(multi_im);
     } else 
     if (i > 1) {
       renderMultiImage(i - 1, multi_im);
       {
         boost::mutex::scoped_lock l(im_mutex);
-        frames.push_back(multi_im);
+        frames_rendered.push_back(multi_im);
       }
 
     } //
     
     if (i % 20 == 0) LOG(INFO) << "loaded " << i;
     // clear frames as we go 
-    if (false && (i > 3)) {
+    if (true && (i > 3)) {
       boost::mutex::scoped_lock l(im_scaled_mutex);
       frames_scaled[i-2].release();
     }
+    #endif
   } // files loop
 
+  #if 0
   cv::Mat multi_im;
   renderMultiImage(0, multi_im);
   {
     boost::mutex::scoped_lock l(im_mutex);
-    frames[0] = multi_im;
+    frames_rendered[0] = multi_im;
   }
   
   // now fill unrendered frames
   renderMultiImage(1, multi_im);
   {
     boost::mutex::scoped_lock l(im_mutex);
-    frames[1] = multi_im;
+    frames_rendered[1] = multi_im;
   }
 
   renderMultiImage(frames_scaled.size()-1, multi_im);
   {
     boost::mutex::scoped_lock l(im_mutex);
-    frames.push_back(multi_im);
+    frames_rendered.push_back(multi_im);
   }
   
   frames_scaled.clear();
+  #endif
 
 } // loadAndResizeImages
 
@@ -371,18 +375,28 @@ bool getFileNames(std::string dir)
 
   /* get a rendered multi frame 
   */
-  cv::Mat getFrame(int& ind) 
+  cv::Mat getFrame(int& ind, const double zoom = 1.0) 
   {
-    boost::mutex::scoped_lock l(im_mutex);
-    if (frames.size() == 0) return cv::Mat();
-    ind = (ind + frames.size()) % frames.size();
-    return frames[ind];
+    cv::Mat multi_im;
+    ind = (ind + frames_scaled.size()) % frames_scaled.size();
+    renderMultiImage(ind, multi_im);
+    return multi_im;
+    // it would be nice to
+    #if 0
+    if (zoom == 1.0) {
+      boost::mutex::scoped_lock l(im_mutex);
+      if (frames_rendered.size() == 0) return cv::Mat();
+      return frames_rendered[ind];
+    }
+    #endif
   }
 
   int getNum() 
   {
-    boost::mutex::scoped_lock l(im_mutex);
-    return frames.size();
+    //boost::mutex::scoped_lock l(im_mutex);
+    //return frames_rendered.size();
+    boost::mutex::scoped_lock l(im_scaled_mutex);
+    return frames_scaled.size();
   }
 
 };
@@ -413,13 +427,15 @@ int main( int argc, char* argv[] )
     usleep(30000);
   }
   
-  LOG(INFO) << t1.elapsed() << " to first frame";
   LOG(INFO) << win_time << " for window";
+  LOG(INFO) << t1.elapsed() << " to first frame";
   
+  double zoom = 1.0;
+
   bool run = true; // rv && rv2;
   while (run) {
 
-    cv::Mat im = images->getFrame(images->ind);
+    cv::Mat im = images->getFrame(images->ind, zoom);
     
     if (!im.empty()) {
       cv::imshow("frames", im);
