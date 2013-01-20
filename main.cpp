@@ -112,7 +112,7 @@ void runThread()
 
 // TBD is this any faster than warpImage?
 // dst needs to exist before rendering
-bool renderImage(cv::Mat& src, cv::Mat& dst, int offx, int offy)
+bool renderImage(cv::Mat& src, cv::Mat& dst, int offx = 0, int offy = 0)
 {
   if (offx > dst.cols ) return false;
   if (offy > dst.rows ) return false;
@@ -172,9 +172,12 @@ bool renderImage(cv::Mat& src, cv::Mat& dst, int offx, int offy)
   has to be limited to sz.height and the roi within src sized and positioned accordingly.
 
 */
-bool clipZoom(const cv::Mat& src, cv::Mat& dst, 
-  const cv::Size sz, 
-  const float zoom = 1.0, const cv::Point2f pos=cv::Point2f(0.5,0.5))
+bool clipZoom(
+    const cv::Mat& src, 
+    cv::Mat& dst, 
+    const cv::Size sz, 
+    const float zoom = 1.0, const cv::Point2f pos=cv::Point2f(0.5,0.5)
+    )
 {
   cv::Size desired_sz = cv::Size(src.size().width * zoom, src.size().height * zoom);
   
@@ -197,16 +200,63 @@ bool clipZoom(const cv::Mat& src, cv::Mat& dst,
   // offset is in the desired_sz scale, need to scale it down 
   cv::Rect roi; // = cv::Rect(0, 0, src.cols, src.rows);
   
-  roi.width = width_fract * src.cols;
-  roi.x = (src.cols - roi.width) * pos.x;
-  
+  roi.width  = width_fract * src.cols;
   roi.height = height_fract * src.rows;
-  roi.y = (src.rows - roi.height) * pos.y;
-
-  const int mode = cv::INTER_NEAREST;
-  cv::Mat resized;
-  cv::resize( src(roi), resized, actual_sz, 0, 0, mode );
   
+  roi.x = 0; // (src.cols - roi.width) * pos.x;
+  roi.y = 0; //(src.rows - roi.height) * pos.y;
+  
+  //roi.x = src.cols * (pos.x - 0.5);
+  //roi.y = src.rows * (pos.y - 0.5);
+
+  int offx = 0;
+  int offy = 0;
+  
+  // these are the coordinates if the image had been blown up at full res
+  // so they are valid if the zoomed image is smaller than the dst sz
+  const float full_offx = -(pos.x*desired_sz.width - sz.width/2);
+  float full_offy = -(pos.y*desired_sz.height - sz.height/2);
+  if (sz.width != actual_sz.width)
+    offx = full_offx;
+  if (sz.height != actual_sz.height) 
+    offy = full_offy;
+   
+  if (0) {
+    roi.x = src.cols * pos.x;
+    roi.y = src.rows * pos.y;
+   
+    if (roi.x < 0) {
+      offx = -roi.x * actual_sz.width/roi.width;
+      roi.x = 0;
+    }
+
+    if (roi.x + roi.width > src.size().width) {
+      roi.width = src.size().width - roi.x;
+    }
+
+    if (roi.y < 0) {
+      offx = -roi.y * actual_sz.height/roi.height;
+      roi.y = 0;
+    }
+
+    if (roi.y + roi.height > src.size().height) {
+      roi.height = src.size().height - roi.y;
+    } 
+
+  }
+  dst = cv::Mat(sz, src.type(), cv::Scalar::all(0));
+  
+  if ((roi.width > 0) && (roi.height > 0)) {
+    const int mode = cv::INTER_NEAREST;
+    cv::Mat resized;
+    cv::resize( src(roi), resized, actual_sz, 0, 0, mode );
+
+    renderImage(resized, dst, offx, offy);
+  
+    VLOG(2) << sz.width << " " << sz.height << ", " 
+      << resized.cols << " " << resized.rows << " " << zoom;
+  }
+  #if 0 
   if ((actual_sz.height < sz.height) || (actual_sz.width < sz.width)) {
     dst = cv::Mat(sz, resized.type(), cv::Scalar::all(0));
     
@@ -219,9 +269,8 @@ bool clipZoom(const cv::Mat& src, cv::Mat& dst,
   } else {
     dst = resized;
   }
+  #endif
 
-  VLOG(2) << sz.width << " " << sz.height << ", " 
-      << resized.cols << " " << resized.rows << " " << zoom;
 
   return true;
 }
@@ -469,28 +518,38 @@ bool getFileNames(std::string dir)
     } else 
     */
     {
-     
+      
       cv::Mat src = frames_orig[ind];
-      const float scaled_zoom = (float)frames_scaled[ind].cols/(float)frames_orig[ind].cols;
+      const float scaled_zoom = (float)src.cols/(float)src.cols;
       VLOG(4) << scaled_zoom << " " << zoom << " " << zoom*scaled_zoom; 
       cv::Size desired_sz = cv::Size(src.size().width * zoom * scaled_zoom, 
           src.size().height * zoom * scaled_zoom);
-  
-      const int mode = cv::INTER_NEAREST;
-      cv::Mat resized;
-      cv::resize( frames_orig[ind], resized, desired_sz, 0, 0, mode );
-  
-      cv::Mat dst = cv::Mat(sz, src.type(), cv::Scalar::all(0));
-      renderImage(resized, dst, -(pos.x*resized.cols - sz.width/2), -(pos.y*resized.rows - sz.height/2));
 
-      VLOG(4) << scaled_zoom << " " << zoom << " " << zoom*scaled_zoom; 
-      /*
-      clipZoom(frames_orig[ind], dst,
+      cv::Mat dst = cv::Mat(sz, src.type(), cv::Scalar::all(0));
+      if (false) {
+        // This method is super slow because it blows up the image so much
+        // it would be better to make clipZoom zoom an area slightly larger than will be displayed
+        // and then clip on the zoomed image rather than with the roi in the original src image
+
+        const int mode = cv::INTER_NEAREST;
+        cv::Mat resized;
+        cv::resize( frames_orig[ind], resized, desired_sz, 0, 0, mode );
+
+        renderImage(resized, dst, -(pos.x*resized.cols - sz.width/2), -(pos.y*resized.rows - sz.height/2));
+
+        VLOG(4) << scaled_zoom << " " << zoom << " " << zoom * scaled_zoom; 
+
+      } else {
+      
+      clipZoom(src, dst,
         sz,
-        zoom * scaled_zoom 
+        zoom * scaled_zoom,
         pos
         );
-        */
+      }
+
+      if (VLOG_IS_ON(1))
+       cv::circle(dst, cv::Point(dst.cols/2, dst.rows/2), 5, cv::Scalar::all(255), -1);
       return dst;
     }
     // it would be nice to
@@ -558,7 +617,7 @@ int main( int argc, char* argv[] )
 
     char key = cv::waitKey(0);
     
-    const float mv = 0.03;
+    const float mv = 0.1;
 
     // there seems to be a delay when key switching, holding down
     // a key produces all the events I expect but changing from one to another
