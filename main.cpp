@@ -132,15 +132,17 @@ bool renderImage(cv::Mat& src, cv::Mat& dst, int offx, int offy)
     offy = 0;
   }
   if (src.cols + offx - src_x > dst.cols) {
-    src_wd = dst.cols - offx;
+  //if (src_wd + offx - src_x > dst.cols) {
+    src_wd = dst.cols - offx + src_x;
   }
   if (src.rows + offy - src_y > dst.rows) {
-    src_ht = dst.rows - offy;
+  //if (src_ht + offy > dst.rows) {
+    src_ht = dst.rows - offy + src_y;
   }
   src_wd -= src_x;
   src_ht -= src_y;
 
-  VLOG(1) << src_x << " " << src_y << " " << src_wd << " " << src_ht 
+  VLOG(1) << "src " << src_x << " " << src_y << ", " << src_wd << " " << src_ht 
       << ", offxy " << offx << " " << offy
       << ", src " 
       << src.cols << " " << src.rows << ", dst "
@@ -341,7 +343,7 @@ bool loadAndResizeImages(
 
     files_used.push_back(files[i]);
     
-    VLOG(1) << " " << i << " loaded image " << next_im;
+    VLOG(2) << " " << i << " loaded image " << next_im;
 
     frames_orig.push_back(new_out);
 
@@ -543,7 +545,7 @@ int main( int argc, char* argv[] )
   // where zoom center is
   // TBD should image class store this per image?
   // also panning around ought to be in pixel increments for big zooms
-  cv::Point2f pos = cv::Point2f(0.0,0.0);
+  cv::Point2f pos = cv::Point2f(0.5,0.5);
 
   bool run = true; // rv && rv2;
   while (run) {
