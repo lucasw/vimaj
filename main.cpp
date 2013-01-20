@@ -217,7 +217,8 @@ bool clipZoom(
   else 
   {
     // This is wrong
-    roi.x = full_offx/zoom;
+    roi.x = -src.cols*(float)full_offx/(float)desired_sz.width;  //  -(pos.x * src.size().width);
+    LOG(INFO) << roi.x;
 
     if (roi.x < 0) {
       
