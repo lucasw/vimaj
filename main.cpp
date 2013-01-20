@@ -47,8 +47,8 @@
 #define CLTX2 "\e[1;44m"  
 
 // TBD move to config file in $HOME/.vimaj/config.yml
-DEFINE_int32(width, 1200, "width");
-DEFINE_int32(height, 800, "height");
+DEFINE_int32(width, 800, "width");
+DEFINE_int32(height, 600, "height");
 DEFINE_double(max_scale, 1.5, "maximum amount to scale the image");
 
 //namespace bm
@@ -142,7 +142,7 @@ bool renderImage(cv::Mat& src, cv::Mat& dst, int offx = 0, int offy = 0)
   src_wd -= src_x;
   src_ht -= src_y;
 
-  VLOG(1) << "src " << src_x << " " << src_y << ", " << src_wd << " " << src_ht 
+  VLOG(2) << "src " << src_x << " " << src_y << ", " << src_wd << " " << src_ht 
       << ", offxy " << offx << " " << offy
       << ", src " 
       << src.cols << " " << src.rows << ", dst "
@@ -206,44 +206,53 @@ bool clipZoom(
   roi.x = 0; // (src.cols - roi.width) * pos.x;
   roi.y = 0; //(src.rows - roi.height) * pos.y;
   
-  //roi.x = src.cols * (pos.x - 0.5);
   //roi.y = src.rows * (pos.y - 0.5);
 
   int offx = 0;
-  int offy = 0;
-  
   // these are the coordinates if the image had been blown up at full res
   // so they are valid if the zoomed image is smaller than the dst sz
-  const float full_offx = -(pos.x*desired_sz.width - sz.width/2);
-  float full_offy = -(pos.y*desired_sz.height - sz.height/2);
+  const float full_offx = -(pos.x * desired_sz.width - sz.width/2);
   if (sz.width != actual_sz.width)
     offx = full_offx;
-  if (sz.height != actual_sz.height) 
-    offy = full_offy;
-   
-  if (0) {
-    roi.x = src.cols * pos.x;
-    roi.y = src.rows * pos.y;
-   
+  else 
+  {
+    // This is wrong
+    roi.x = full_offx/zoom;
+
     if (roi.x < 0) {
-      offx = -roi.x * actual_sz.width/roi.width;
+      
+      int new_roi_width = roi.width + roi.x;
+      int new_actual_sz_width = actual_sz.width * (float)(new_roi_width)/(float)roi.width;
+      offx = actual_sz.width - new_actual_sz_width;
+      actual_sz.width = new_actual_sz_width;
+
+      roi.width = new_roi_width;
       roi.x = 0;
+
+      // TBD adjust offx and actual_sz
+
+      LOG(INFO) << offx  << " " << actual_sz.width << ", roi " << roi.x << " " << roi.width;
     }
 
-    if (roi.x + roi.width > src.size().width) {
-      roi.width = src.size().width - roi.x;
+    if (roi.x + roi.width > src.cols) {
+      int new_roi_width = src.cols - roi.x;
+      actual_sz.width *= (float)(new_roi_width)/(float)roi.width;
+      roi.width = new_roi_width;
+      
+      // TBD adjust offx and actual_sz
     }
-
-    if (roi.y < 0) {
-      offx = -roi.y * actual_sz.height/roi.height;
-      roi.y = 0;
-    }
-
-    if (roi.y + roi.height > src.size().height) {
-      roi.height = src.size().height - roi.y;
-    } 
 
   }
+
+  int offy = 0;
+  const float full_offy = -(pos.y * desired_sz.height - sz.height/2);
+  if (sz.height != actual_sz.height) 
+    offy = full_offy;
+  else 
+  {
+
+  }
+  
   dst = cv::Mat(sz, src.type(), cv::Scalar::all(0));
   
   if ((roi.width > 0) && (roi.height > 0)) {
@@ -617,7 +626,7 @@ int main( int argc, char* argv[] )
 
     char key = cv::waitKey(0);
     
-    const float mv = 0.1;
+    const float mv = 0.01;
 
     // there seems to be a delay when key switching, holding down
     // a key produces all the events I expect but changing from one to another
