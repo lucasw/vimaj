@@ -111,6 +111,7 @@ void runThread()
 }
 
 // TBD is this any faster than warpImage?
+// dst needs to exist before rendering
 bool renderImage(cv::Mat& src, cv::Mat& dst, int offx, int offy)
 {
   if (offx > dst.cols ) return false;
@@ -177,11 +178,8 @@ bool clipZoom(const cv::Mat& src, cv::Mat& dst,
   
   cv::Size actual_sz = sz;
 
-  cv::Point2f offset = cv::Point2f(0,0);
-
   float width_fract = 1.0;
   if (desired_sz.width > sz.width) {
-    offset.x = (desired_sz.width - sz.width)*pos.x;
     width_fract = (float)sz.width/(float)desired_sz.width;
   } else {
     actual_sz.width = desired_sz.width;
@@ -189,7 +187,6 @@ bool clipZoom(const cv::Mat& src, cv::Mat& dst,
 
   float height_fract = 1.0;
   if (desired_sz.height > sz.height) {
-    offset.y = (desired_sz.height - sz.height)*pos.y;
     height_fract = (float)sz.height/(float)desired_sz.height;
   } else {
     actual_sz.height = desired_sz.height;
@@ -462,17 +459,36 @@ bool getFileNames(std::string dir)
   cv::Mat getFrame(int& ind, const double zoom = 1.0, cv::Point2f pos= cv::Point2f(0.5,0.5)) 
   {
     ind = (ind + frames_scaled.size()) % frames_scaled.size();
+    /*
     if (zoom == 1.0) {
       cv::Mat multi_im;
       renderMultiImage(ind, multi_im);
       return multi_im;
-    } else {
-      cv::Mat dst;
+    } else 
+    */
+    {
+     
+      cv::Mat src = frames_orig[ind];
+      const float scaled_zoom = (float)frames_scaled[ind].cols/(float)frames_orig[ind].cols;
+      VLOG(4) << scaled_zoom << " " << zoom << " " << zoom*scaled_zoom; 
+      cv::Size desired_sz = cv::Size(src.size().width * zoom * scaled_zoom, 
+          src.size().height * zoom * scaled_zoom);
+  
+      const int mode = cv::INTER_NEAREST;
+      cv::Mat resized;
+      cv::resize( frames_orig[ind], resized, desired_sz, 0, 0, mode );
+  
+      cv::Mat dst = cv::Mat(sz, src.type(), cv::Scalar::all(0));
+      renderImage(resized, dst, -(pos.x*resized.cols - sz.width/2), -(pos.y*resized.rows - sz.height/2));
+
+      VLOG(4) << scaled_zoom << " " << zoom << " " << zoom*scaled_zoom; 
+      /*
       clipZoom(frames_orig[ind], dst,
         sz,
-        zoom * (float)frames_scaled[ind].cols/(float)frames_orig[ind].cols,
+        zoom * scaled_zoom 
         pos
         );
+        */
       return dst;
     }
     // it would be nice to
@@ -527,7 +543,7 @@ int main( int argc, char* argv[] )
   // where zoom center is
   // TBD should image class store this per image?
   // also panning around ought to be in pixel increments for big zooms
-  cv::Point2f pos = cv::Point2f(0.5,0.5);
+  cv::Point2f pos = cv::Point2f(0.0,0.0);
 
   bool run = true; // rv && rv2;
   while (run) {
@@ -540,6 +556,8 @@ int main( int argc, char* argv[] )
 
     char key = cv::waitKey(0);
     
+    const float mv = 0.03;
+
     // there seems to be a delay when key switching, holding down
     // a key produces all the events I expect but changing from one to another
     // produces a noticeable pause.
@@ -563,28 +581,28 @@ int main( int argc, char* argv[] )
     }
     else if (key == 'l') {
       zoom *= 0.95;
-      if (zoom < 1.0) zoom = 1.0;
+      if (zoom < 1.0/32.0) zoom = 1.0/32.0;
     }
     // scroll around
     else if (key == 's') {
-      pos.x *= (1.0 - 0.05/zoom);
-      pos.x -= 0.01/zoom;
-      if (pos.x < 0) pos.x = 0;
+      //pos.x *= (1.0 - 0.05/zoom);
+      pos.x -= mv/zoom;
+      //if (pos.x < 0) pos.x = 0;
     }
     else if (key == 'd') {
-      pos.x *= (1.0 + 0.04/zoom);
-      pos.x += 0.011/zoom;
-      if (pos.x > 1.0) pos.x = 1.0;
+      //pos.x *= (1.0 + 0.04/zoom);
+      pos.x += mv/zoom;
+      //if (pos.x > 1.0) pos.x = 1.0;
     }
     else if (key == 'f') {
-      pos.y *= (1.0 + 0.05/zoom);
-      pos.y += 0.011/zoom;
-      if (pos.y > 1.0) pos.y = 1.0;
+      //pos.y *= (1.0 + 0.05/zoom);
+      pos.y += mv/zoom;
+      //if (pos.y > 1.0) pos.y = 1.0;
     }
     else if (key == 'a') {
-      pos.y *= (1.0 - 0.04/zoom);
-      pos.y -= 0.01/zoom;
-      if (pos.y < 0.0) pos.y = 0.0;
+      //pos.y *= (1.0 - 0.04/zoom);
+      pos.y -= mv/zoom;
+      //if (pos.y < 0.0) pos.y = 0.0;
     }
 
   }
