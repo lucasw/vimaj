@@ -549,7 +549,7 @@ bool getFileNames(std::string dir)
     {
       
       cv::Mat src = frames_orig[ind];
-      const float scaled_zoom = (float)src.cols/(float)src.cols;
+      const float scaled_zoom = (float)frames_scaled[ind].cols/(float)src.cols;
       VLOG(4) << scaled_zoom << " " << zoom << " " << zoom*scaled_zoom; 
       cv::Size desired_sz = cv::Size(src.size().width * zoom * scaled_zoom, 
           src.size().height * zoom * scaled_zoom);
@@ -646,8 +646,9 @@ int main( int argc, char* argv[] )
 
     char key = cv::waitKey(0);
     
-    const float mv = 0.02;
-
+    const float mv = 0.04;
+    const float pos_min = 0.0; //-0.25;
+    const float pos_max = 1.0 - pos_min;
     // there seems to be a delay when key switching, holding down
     // a key produces all the events I expect but changing from one to another
     // produces a noticeable pause.
@@ -677,22 +678,27 @@ int main( int argc, char* argv[] )
     else if (key == 's') {
       //pos.x *= (1.0 - 0.05/zoom);
       pos.x -= mv/zoom;
-      //if (pos.x < 0) pos.x = 0;
+      if (pos.x < pos_min) pos.x = pos_min;
     }
     else if (key == 'd') {
       //pos.x *= (1.0 + 0.04/zoom);
       pos.x += mv/zoom;
-      //if (pos.x > 1.0) pos.x = 1.0;
+      if (pos.x > pos_max) pos.x = pos_max;
     }
     else if (key == 'f') {
       //pos.y *= (1.0 + 0.05/zoom);
       pos.y += mv/zoom;
-      //if (pos.y > 1.0) pos.y = 1.0;
+      if (pos.y > pos_max) pos.y = pos_max;
     }
     else if (key == 'a') {
       //pos.y *= (1.0 - 0.04/zoom);
       pos.y -= mv/zoom;
-      //if (pos.y < 0.0) pos.y = 0.0;
+      if (pos.y < pos_min) pos.y = pos_min;
+    }
+    else if (key == 'g') {
+      pos.x = 0.5;
+      pos.y = 0.5;
+      zoom = 1.0;
     }
 
   }
