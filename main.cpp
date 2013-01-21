@@ -216,9 +216,8 @@ bool clipZoom(
     offx = full_offx;
   else 
   {
-    // This is wrong
     roi.x = -src.cols*(float)full_offx/(float)desired_sz.width;  //  -(pos.x * src.size().width);
-    LOG(INFO) << roi.x;
+    VLOG(2) << roi.x;
 
     if (roi.x < 0) {
       
@@ -231,16 +230,13 @@ bool clipZoom(
       roi.x = 0;
 
       // TBD adjust offx and actual_sz
-
-      LOG(INFO) << offx  << " " << actual_sz.width << ", roi " << roi.x << " " << roi.width;
+      VLOG(3) << offx  << " " << actual_sz.width << ", roi " << roi.x << " " << roi.width;
     }
 
     if (roi.x + roi.width > src.cols) {
       int new_roi_width = src.cols - roi.x;
       actual_sz.width *= (float)(new_roi_width)/(float)roi.width;
       roi.width = new_roi_width;
-      
-      // TBD adjust offx and actual_sz
     }
 
   }
@@ -251,6 +247,29 @@ bool clipZoom(
     offy = full_offy;
   else 
   {
+    roi.y = -src.rows*(float)full_offy/(float)desired_sz.height;  //  -(pos.y * src.size().height);
+    VLOG(2) << roi.y;
+
+    if (roi.y < 0) {
+      
+      int new_roi_height = roi.height + roi.y;
+      int new_actual_sz_height = actual_sz.height * (float)(new_roi_height)/(float)roi.height;
+      offy = actual_sz.height - new_actual_sz_height;
+      actual_sz.height = new_actual_sz_height;
+
+      roi.height = new_roi_height;
+      roi.y = 0;
+
+      VLOG(3) << offy  << " " << actual_sz.height << ", roi " << roi.y << " " << roi.height;
+    }
+
+    if (roi.y + roi.height > src.rows) {
+      int new_roi_height = src.rows - roi.y;
+      actual_sz.height *= (float)(new_roi_height)/(float)roi.height;
+      roi.height = new_roi_height;
+      
+    }
+
 
   }
   
@@ -627,7 +646,7 @@ int main( int argc, char* argv[] )
 
     char key = cv::waitKey(0);
     
-    const float mv = 0.01;
+    const float mv = 0.02;
 
     // there seems to be a delay when key switching, holding down
     // a key produces all the events I expect but changing from one to another
