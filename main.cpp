@@ -58,7 +58,11 @@ class Images
 
 float progress;
 
+// the size of the rendered image
 cv::Size sz;
+// an roi in units of the rendered image 
+//cv::Rect roi;
+
 float max_scale;
 std::vector<cv::Mat> frames_orig; 
 std::vector<cv::Mat> frames_scaled; 
@@ -73,6 +77,8 @@ std::vector<std::string> files_used;
 
 public:
 
+float roi_aspect;
+
 bool continue_loading;
 
 int ind;
@@ -85,7 +91,8 @@ Images(
   max_scale(max_scale),
   continue_loading(true),
   ind(0),
-  progress(0.0)
+  progress(0.0),
+  roi_aspect(1.0)
 {
   im_thread = boost::thread(&Images::runThread, this);
   
@@ -597,17 +604,38 @@ bool getFileNames(std::string dir)
     return frames_scaled.size();
   }
 
+  cv::Rect getRoiRect()
+  { 
+    float base_aspect = (float)sz.width/(float)sz.height;
+
+    cv::Rect roi;
+    if (roi_aspect > 1.0) {
+      roi.x = 0;
+      roi.width = sz.width;
+
+      roi.height = (float) sz.width / (roi_aspect * base_aspect);
+      roi.y = (sz.height - roi.height)/2;
+    } else {
+      roi.y = 0;
+      roi.height = sz.height;
+
+      roi.width = (float) sz.width * (roi_aspect * base_aspect);
+      roi.x = (sz.width - roi.width)/2;
+    }
+
+    return roi;
+  }
+
 };
 
 /*
 
- */
+*/
 int main( int argc, char* argv[] )
 {
   google::InitGoogleLogging(argv[0]);
   google::LogToStderr();
   google::ParseCommandLineFlags(&argc, &argv, false);
-
 
   boost::timer t1;
   Images* images = new Images(
@@ -641,6 +669,9 @@ int main( int argc, char* argv[] )
     cv::Mat im = images->getFrame(images->ind, zoom, pos);
     
     if (!im.empty()) {
+      // draw rectangle on image to show current roi
+      cv::rectangle(im, images->getRoiRect(), cv::Scalar(100,255,100), 2);
+
       cv::imshow("frames", im);
     }
 
@@ -699,6 +730,15 @@ int main( int argc, char* argv[] )
       pos.x = 0.5;
       pos.y = 0.5;
       zoom = 1.0;
+      images->roi_aspect = 1.0;
+    }
+    else if (key == 'e') {
+      // increase roi horizontal aspect
+      images->roi_aspect *= 1.05;
+    }
+    else if (key == 'w') {
+      // increase roi horizontal aspect
+      images->roi_aspect *= 0.97;
     }
 
   }
