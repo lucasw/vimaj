@@ -75,6 +75,9 @@ std::string dir;
 std::vector<std::string> files;
 std::vector<std::string> files_used;
 
+int cur_ind;
+cv::Mat cur_roi_im;
+
 public:
 
 float roi_aspect;
@@ -119,7 +122,7 @@ void runThread()
 
 // TBD is this any faster than warpImage?
 // dst needs to exist before rendering
-bool renderImage(cv::Mat& src, cv::Mat& dst, int offx = 0, int offy = 0)
+bool renderImage(cv::Mat& src, cv::Mat& dst, cv::Rect& roi, int offx = 0, int offy = 0)
 {
   if (offx > dst.cols ) return false;
   if (offy > dst.rows ) return false;
@@ -156,9 +159,16 @@ bool renderImage(cv::Mat& src, cv::Mat& dst, int offx = 0, int offy = 0)
       << dst.cols << " " << dst.rows; 
   cv::Mat src_clipped = src(cv::Rect(src_x, src_y, src_wd, src_ht));
   
-  cv::Mat dst_roi = dst(cv::Rect(offx, offy, 
-        src_clipped.cols, src_clipped.rows));
+  roi = cv::Rect(offx, offy, src_clipped.cols, src_clipped.rows);
+
+  cv::Mat dst_roi = dst(roi);
   src_clipped.copyTo(dst_roi);
+  
+  // draw rectangle around the roi
+  if (true) {
+    cv::Rect roi2 = cv::Rect(offx-1, offy-1, src_clipped.cols+2, src_clipped.rows+2);
+    cv::rectangle(dst, roi2, cv::Scalar(165,175,150), 1);
+  }
 
   return true;
 }
@@ -286,11 +296,18 @@ bool clipZoom(
     const int mode = cv::INTER_NEAREST;
     cv::Mat resized;
     cv::resize( src(roi), resized, actual_sz, 0, 0, mode );
+   
+    // this can optionally save the roi image
+    // instead of a member variable side effect
+    // should this get returned to the caller?
+    cur_roi_im = src(roi);
 
-    renderImage(resized, dst, offx, offy);
+    cv::Rect rendered_roi;
+    renderImage(resized, dst, rendered_roi, offx, offy);
   
     VLOG(2) << sz.width << " " << sz.height << ", " 
       << resized.cols << " " << resized.rows << " " << zoom;
+
   }
   #if 0 
   if ((actual_sz.height < sz.height) || (actual_sz.width < sz.width)) {
@@ -370,16 +387,17 @@ bool renderMultiImage(const int i, cv::Mat& tmp1)
   int ind2 = ind - 1;
   cv::Mat prev = getScaledFrame(ind2);
   
+  cv::Rect roi;
   if (ind2 != i) {
-    renderImage(prev, tmp1, 
+    renderImage(prev, tmp1, roi,
         off_x - prev.cols - border, off_y);
 
     ind2 = ind + 1;
     cv::Mat next = getScaledFrame(ind);
-    renderImage(next, tmp1, 
+    renderImage(next, tmp1, roi,
         off_x + tmp_aspect.size().width + border, off_y);
   }
-  renderImage(tmp_aspect, tmp1, off_x, off_y);
+  renderImage(tmp_aspect, tmp1, roi, off_x, off_y);
 
 #if 0
   // TBD put offset so image is centered
@@ -543,9 +561,14 @@ bool getFileNames(std::string dir)
 
   /* get a rendered multi frame 
   */
-  cv::Mat getFrame(int& ind, const double zoom = 1.0, cv::Point2f pos= cv::Point2f(0.5,0.5)) 
+  cv::Mat getFrame(
+      int& ind, 
+      const double zoom = 1.0, 
+      cv::Point2f pos= cv::Point2f(0.5,0.5)
+      ) 
   {
     ind = (ind + frames_scaled.size()) % frames_scaled.size();
+    cur_ind = ind;
     /*
     if (zoom == 1.0) {
       cv::Mat multi_im;
@@ -554,7 +577,6 @@ bool getFileNames(std::string dir)
     } else 
     */
     {
-      
       cv::Mat src = frames_orig[ind];
       const float scaled_zoom = (float)frames_scaled[ind].cols/(float)src.cols;
       VLOG(4) << scaled_zoom << " " << zoom << " " << zoom*scaled_zoom; 
@@ -570,8 +592,12 @@ bool getFileNames(std::string dir)
         const int mode = cv::INTER_NEAREST;
         cv::Mat resized;
         cv::resize( frames_orig[ind], resized, desired_sz, 0, 0, mode );
-
-        renderImage(resized, dst, -(pos.x*resized.cols - sz.width/2), -(pos.y*resized.rows - sz.height/2));
+        
+        cv::Rect roi;
+        renderImage(resized, dst, roi, 
+            -(pos.x*resized.cols - sz.width/2), 
+            -(pos.y*resized.rows - sz.height/2)
+            );
 
         VLOG(4) << scaled_zoom << " " << zoom << " " << zoom * scaled_zoom; 
 
@@ -583,6 +609,11 @@ bool getFileNames(std::string dir)
         pos
         );
       }
+
+      // draw rectangle on image to show current roi
+      cv::rectangle(dst, getRoiRect(1), cv::Scalar(0,0,0), 1);
+      cv::rectangle(dst, getRoiRect(0), cv::Scalar(255,255,255), 1);
+
 
       if (VLOG_IS_ON(1))
        cv::circle(dst, cv::Point(dst.cols/2, dst.rows/2), 5, cv::Scalar::all(255), -1);
@@ -634,6 +665,34 @@ bool getFileNames(std::string dir)
     return roi;
   }
 
+  bool saveRoiImage()
+  {
+    
+    if (cur_ind > files_used.size()) {
+      return false;
+    }
+
+    std::stringstream name;
+    name << files_used[cur_ind].substr(0,files_used[cur_ind].size()-4);
+
+    bool matched = true;
+    int i = 1000;
+    while (matched) {
+      std::stringstream nametest;
+      nametest << name;
+      name << "_" << i << ".jpg";
+      if (!boost::filesystem::exists(name.str())) matched = false;
+      i++;
+    }
+
+    LOG(INFO) << "wrote " << name.str();
+    imwrite(name.str(), cur_roi_im);
+
+    // TBD put this image in the file/image array
+    return true;
+
+  }
+
 };
 
 /*
@@ -677,11 +736,7 @@ int main( int argc, char* argv[] )
     cv::Mat im = images->getFrame(images->ind, zoom, pos);
     
     if (!im.empty()) {
-      // draw rectangle on image to show current roi
-      cv::rectangle(im, images->getRoiRect(1), cv::Scalar(0,0,0), 1);
-      cv::rectangle(im, images->getRoiRect(0), cv::Scalar(255,255,255), 1);
-
-      cv::imshow("frames", im);
+        cv::imshow("frames", im);
     }
 
     char key = cv::waitKey(0);
@@ -748,6 +803,9 @@ int main( int argc, char* argv[] )
     else if (key == 'w') {
       // increase roi horizontal aspect
       images->roi_aspect *= 0.97;
+    }
+    else if (key == 'p') {
+      images->saveRoiImage();
     }
 
   }
