@@ -77,6 +77,9 @@ std::vector<std::string> files_used;
 
 int cur_ind;
 cv::Mat cur_roi_im;
+cv::Rect cur_roi;
+// full sized image
+cv::Mat cur_im; 
 
 public:
 
@@ -300,7 +303,9 @@ bool clipZoom(
     // this can optionally save the roi image
     // instead of a member variable side effect
     // should this get returned to the caller?
+    cur_im = src;
     cur_roi_im = src(roi);
+    cur_roi = roi;
 
     cv::Rect rendered_roi;
     renderImage(resized, dst, rendered_roi, offx, offy);
@@ -635,7 +640,8 @@ bool getFileNames(std::string dir)
     return frames_scaled.size();
   }
 
-  cv::Rect getRoiRect(const int pad = 0)
+  ////////////////////////////////////////////////////////////
+  cv::Rect getRoiRect(const int pad = 0, double zoom = 1.0)
   { 
     float base_aspect = (float)sz.width/(float)sz.height;
 
@@ -661,11 +667,16 @@ bool getFileNames(std::string dir)
       roi.width = (int)((float) sz.width * (roi_aspect * base_aspect)) + 2*pad;
       roi.x = (sz.width - roi.width)/2 - pad + p2;
     }
+    
+    roi.x *= zoom;
+    roi.y *= zoom;
+    roi.width *= zoom;
+    roi.height *= zoom;
 
     return roi;
   }
 
-  bool saveRoiImage()
+  bool saveRoiImage(const double zoom = 1.0)
   {
     
     if (cur_ind > files_used.size()) {
@@ -679,18 +690,39 @@ bool getFileNames(std::string dir)
     int i = 1000;
     while (matched) {
       std::stringstream nametest;
-      nametest << name;
-      name << "_" << i << ".jpg";
-      if (!boost::filesystem::exists(name.str())) matched = false;
+      nametest << name.str();
+      nametest << "_" << i << ".jpg";
+      if (!boost::filesystem::exists(nametest.str())) {
+        matched = false;
+        name.str(nametest.str());
+      }
       i++;
     }
 
+    /*if (
+        (aspect_roi.x + aspect_roi.width < cur_roi_im.cols) &&
+        (aspect_roi.x > 0) &&
+        (aspect_roi.y + aspect_roi.height < cur_roi_im.rows) &&
+        (aspect_roi.y > 0)
+        ) {
+    */
+    
     LOG(INFO) << "wrote " << name.str();
-    imwrite(name.str(), cur_roi_im);
+    if (  
+        (roi_aspect != 1.0) 
+       )
+    {
+      cv::Rect roi2 = getRoiRect(zoom); 
+      cv::Rect combined_roi = roi2 & cur_roi; // rectangle intersection
+      imwrite(name.str(), cur_im(combined_roi));
+         
+    } else {
+
+      imwrite(name.str(), cur_roi_im);
+    }
 
     // TBD put this image in the file/image array
     return true;
-
   }
 
 };
@@ -805,7 +837,8 @@ int main( int argc, char* argv[] )
       images->roi_aspect *= 0.97;
     }
     else if (key == 'p') {
-      images->saveRoiImage();
+      // TBD zoom belongs in Images
+      images->saveRoiImage(zoom);
     }
 
   }
