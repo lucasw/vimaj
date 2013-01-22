@@ -604,23 +604,31 @@ bool getFileNames(std::string dir)
     return frames_scaled.size();
   }
 
-  cv::Rect getRoiRect()
+  cv::Rect getRoiRect(const int pad = 0)
   { 
     float base_aspect = (float)sz.width/(float)sz.height;
 
+    int p2 = 0;
+    if (pad != 0) p2 = 1;
+
     cv::Rect roi;
-    if (roi_aspect > 1.0) {
-      roi.x = 0;
-      roi.width = sz.width;
+    if (roi_aspect == 1.0) {
+      roi.x = -1;
+      roi.y = -1;
+      roi.width = sz.width+2;
+      roi.height = sz.height+2;
+    } else if (roi_aspect > 1.0) {
+      roi.x = -pad + p2;
+      roi.width = sz.width + 2*pad;
 
-      roi.height = (float) sz.width / (roi_aspect * base_aspect);
-      roi.y = (sz.height - roi.height)/2;
+      roi.height = (int)((float) sz.width / (roi_aspect * base_aspect)) + 2*pad;
+      roi.y = (sz.height - roi.height)/2 - pad + p2;
     } else {
-      roi.y = 0;
-      roi.height = sz.height;
+      roi.y = -pad + p2;
+      roi.height = sz.height + 2*pad;
 
-      roi.width = (float) sz.width * (roi_aspect * base_aspect);
-      roi.x = (sz.width - roi.width)/2;
+      roi.width = (int)((float) sz.width * (roi_aspect * base_aspect)) + 2*pad;
+      roi.x = (sz.width - roi.width)/2 - pad + p2;
     }
 
     return roi;
@@ -670,7 +678,8 @@ int main( int argc, char* argv[] )
     
     if (!im.empty()) {
       // draw rectangle on image to show current roi
-      cv::rectangle(im, images->getRoiRect(), cv::Scalar(100,255,100), 2);
+      cv::rectangle(im, images->getRoiRect(1), cv::Scalar(0,0,0), 1);
+      cv::rectangle(im, images->getRoiRect(0), cv::Scalar(255,255,255), 1);
 
       cv::imshow("frames", im);
     }
