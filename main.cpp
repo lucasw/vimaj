@@ -1,8 +1,8 @@
 /*
 
-  Copyright 2012 Lucas Walter
+  Copyright 2012-2020 Lucas Walter
 
-     This file is part of Vimjay.
+    This file is part of Vimaj.
 
     Vimjay is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -448,7 +448,7 @@ public:
     if (i < 1) {
       renderMultiImage(i, multi_im);
       frames_rendered.push_back(multi_im);
-    } else 
+    } else
     if (i > 1) {
       renderMultiImage(i - 1, multi_im);
       {
@@ -457,9 +457,9 @@ public:
       }
 
     } //
-    
+
     if (i % 20 == 0) LOG(INFO) << "loaded " << i;
-    // clear frames as we go 
+    // clear frames as we go
     if (true && (i > 3)) {
       boost::mutex::scoped_lock l(im_scaled_mutex);
       frames_scaled[i-2].release();
@@ -476,7 +476,7 @@ public:
     boost::mutex::scoped_lock l(im_mutex);
     frames_rendered[0] = multi_im;
   }
-  
+
   // now fill unrendered frames
   renderMultiImage(1, multi_im);
   {
@@ -489,10 +489,10 @@ public:
     boost::mutex::scoped_lock l(im_mutex);
     frames_rendered.push_back(multi_im);
   }
-  
+
   frames_scaled.clear();
 #endif
-
+    return true;
   } // loadAndResizeImages
 
   bool getFileNames(std::string dir) {
@@ -529,6 +529,7 @@ public:
 
       files.push_back(next_im);
     }
+    return true;
   }
 
   /////////////////////////////////
@@ -592,7 +593,8 @@ public:
                    cv::Scalar::all(255), -1);
       return dst;
     }
-// it would be nice to
+
+    // it would be nice to
 #if 0
       boost::mutex::scoped_lock l(im_mutex);
       if (frames_rendered.size() == 0) return cv::Mat();
@@ -704,7 +706,8 @@ int main(int argc, char *argv[]) {
   // this is effectively 0 to do above
 
   // this take about 0.2 seconds, how fast is raw Xlib in vimjay for comparison?
-  cv::namedWindow("frames", CV_GUI_NORMAL | CV_WINDOW_AUTOSIZE);
+  // cv::namedWindow("frames", CV_GUI_NORMAL | CV_WINDOW_AUTOSIZE);
+  cv::namedWindow("frames");  //, CV_WINDOW_AUTOSIZE);
   double win_time = t1.elapsed();
 
   /// this probably is already done by the time the above window is created
