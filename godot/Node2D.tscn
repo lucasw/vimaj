@@ -1,0 +1,36 @@
+[gd_scene load_steps=2 format=2]
+
+[ext_resource path="res://Node2D.gd" type="Script" id=2]
+
+[node name="Node2D" type="Node2D"]
+script = ExtResource( 2 )
+
+[node name="FileDialog" type="FileDialog" parent="."]
+margin_left = 99.0
+margin_top = 104.0
+margin_right = 793.0
+margin_bottom = 495.0
+window_title = "Open a File"
+resizable = true
+dialog_hide_on_ok = true
+mode = 0
+access = 2
+current_dir = "/home/lucasw/own/src/godot/test"
+current_file = "cyberscape0.png"
+current_path = "/home/lucasw/own/src/godot/test/cyberscape0.png"
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="Sprite" type="Sprite" parent="."]
+centered = false
+
+[node name="Button" type="Button" parent="."]
+margin_left = 425.026
+margin_top = 565.21
+margin_right = 671.026
+margin_bottom = 596.21
+text = "image"
+__meta__ = {
+"_edit_use_anchors_": false
+}
