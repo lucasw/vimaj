@@ -15,9 +15,9 @@ resizable = true
 dialog_hide_on_ok = true
 mode = 0
 access = 2
-current_dir = "/home/lucasw/own/src/godot/test"
+current_dir = "/home/lucasw/own/src/vimaj/godot"
 current_file = "cyberscape0.png"
-current_path = "/home/lucasw/own/src/godot/test/cyberscape0.png"
+current_path = "/home/lucasw/own/src/vimaj/godot/cyberscape0.png"
 __meta__ = {
 "_edit_use_anchors_": false
 }

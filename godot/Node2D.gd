@@ -4,13 +4,17 @@ extends Node2D
 # Declare member variables here. Examples:
 # var a = 2
 # var b = "text"
-
+var image_list = []
+var index = 0
+var cur_path
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
 	$FileDialog.hide()
 	$Button.connect("pressed", self, "open_dir", ["open_dir_test"])
-	$FileDialog.connect("file_selected", self, "image_file_selected")
+	$FileDialog.mode = FileDialog.MODE_OPEN_DIR
+	# $FileDialog.connect("file_selected", self, "image_file_selected")
+	$FileDialog.connect("dir_selected", self, "image_dir_selected")
 
 func open_dir(button_name):
 	print(button_name)
@@ -18,6 +22,40 @@ func open_dir(button_name):
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 #func _process(delta):
 #	pass
+
+func image_dir_selected(path):
+
+	print(cur_path)
+	var dir = Directory.new()
+
+	if dir.open(path) != OK:
+		print("An error occurred when trying to access the path.")
+		return
+		
+	dir.list_dir_begin()
+	var image_names = []
+	while true:
+		var file_name = dir.get_next()
+		if file_name == "":
+			break
+		if dir.current_is_dir():
+			continue
+		var num = len(file_name)
+		if num < 4:
+			continue
+		var postfix = file_name.right(num - 3)
+		if postfix != "jpg" and postfix != "png":
+			continue
+		image_names = image_names + [file_name]
+		
+	for image_name in image_names:
+		print(image_name)
+	cur_path = path
+	image_list = image_names
+	index = 0
+	if len(image_list) == 0:
+		return
+	image_file_selected(path + "/" + image_names[0])
 
 func image_file_selected(path):
 	print(path)
@@ -61,4 +99,21 @@ func image_file_selected(path):
 	
 	$Sprite.set_scale(Vector2(sc_x, sc_y))
 	
-#
+func change_image(new_index):
+	var num = len(image_list)
+	if num == 0:
+		return
+	# index = new_index % num
+	if new_index >= num:
+		return
+	if new_index < 0:
+		return
+	index = new_index
+	image_file_selected(cur_path + "/" + image_list[index])
+	
+func _input(event):
+	if event.is_action_pressed("ui_left"):
+		change_image(index - 1)
+		
+	if event.is_action_pressed("ui_right"):
+		change_image(index + 1)
